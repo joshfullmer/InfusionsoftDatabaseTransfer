@@ -959,5 +959,3 @@ destination.close()
 
 if dropdowns_modified:
     print('IMPORTANT: Reload Frontend')
-
-# Shanes Comment
