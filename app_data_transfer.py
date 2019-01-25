@@ -18,7 +18,6 @@ destination = Database('ij520', 27001)
 
 # TODO later:
 # Transfer order history
-# Transfer subscriptions
 
 
 def transfer_lead_sources(source, destination):
@@ -845,7 +844,7 @@ def create_missing_records(tablename, database, data, matches, offset=0):
 
     # If there are missing items, insert into table
     if not missing_rows.empty:
-        destination.insert_dataframe(tablename, missing_rows)
+        database.insert_dataframe(tablename, missing_rows)
 
     # Update matching relationship with new Ids
     matches.loc[matches[d_id].isnull(), d_id] = new_ids_series.values
