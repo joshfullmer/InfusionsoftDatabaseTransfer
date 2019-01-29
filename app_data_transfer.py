@@ -795,7 +795,7 @@ def transfer_subscriptions(
     increment_end = (2 * len(subs_to_import)) + increment_start
     new_ids = [i for i in range(increment_start, increment_end, 2)]
 
-    # Create action relationship
+    # Create subscription relationship
     sub_rel = dict(zip(subs_to_import['Id'].tolist(), new_ids))
 
     # Update missing categories to have newly generated ids
@@ -807,6 +807,119 @@ def transfer_subscriptions(
         destination.insert_dataframe('JobRecurring', subs_to_import)
 
     return sub_rel
+
+
+def transfer_orders(source, destination, contact_rel, prod_rel):
+    """
+    Things to transfer before Jobs:
+    - Address
+    """
+
+    user_rel = get_user_relationship(source, destination)
+
+    #--------------------#
+    # ADDRESSES          #
+    #--------------------#
+
+    s_addresses = source.get_table('Address')
+
+    ############################
+    # GENERATE NEW ADDRESS IDS #
+    ############################
+
+    # Get auto increment and generate list of ids based on that
+    offset = 50
+    increment_start = destination.get_auto_increment('Address') + offset
+    increment_end = (2 * len(s_addresses)) + increment_start
+    new_address_ids = [i for i in range(increment_start, increment_end, 2)]
+
+    # Create address relationship
+    add_rel = dict(zip(s_addresses['Id'].tolist(), new_address_ids))
+
+    # Update missing categories to have newly generated ids
+    new_add_ids_series = pd.Series(new_address_ids)
+    s_addresses['Id'] = new_add_ids_series.values
+
+    ####################
+    # CREATE ADDRESSES #
+    ####################
+
+    # Add addresses to destination
+    if not s_addresses.empty:
+        destination.insert_dataframe('Address', s_addresses)
+
+    #--------------------#
+    # JOBS               #
+    #--------------------#
+
+    s_jobs = source.get_table('Job')
+    s_invoices = source.get_table('Invoice')
+
+    ########################
+    # GENERATE NEW JOB IDS #
+    ########################
+
+    # Get auto increment and generate list of ids based on that
+    offset = 50
+    increment_start = destination.get_auto_increment('Job') + offset
+    increment_end = (2 * len(s_jobs)) + increment_start
+    new_job_ids = [i for i in range(increment_start, increment_end, 2)]
+
+    # Create address relationship
+    job_rel = dict(zip(s_jobs['Id'].tolist(), new_job_ids))
+    job_rel[0] = 0
+
+    # Update missing categories to have newly generated ids
+    new_job_ids_series = pd.Series(new_job_ids)
+    s_jobs['Id'] = new_job_ids_series.values
+
+    ############################
+    # GENERATE NEW INVOICE IDS #
+    ############################
+
+    # Get auto increment and generate list of ids based on that
+    offset = 50
+    increment_start = destination.get_auto_increment('Invoice') + offset
+    increment_end = (2 * len(s_invoices)) + increment_start
+    new_invoice_ids = [i for i in range(increment_start, increment_end, 2)]
+
+    # Create address relationship
+    invoice_rel = dict(zip(s_invoices['Id'].tolist(), new_invoice_ids))
+    invoice_rel[0] = 0
+
+    # Update missing categories to have newly generated ids
+    new_invoice_ids_series = pd.Series(new_invoice_ids)
+    s_invoices['Id'] = new_invoice_ids_series.values
+
+    #######################
+    # JOB TABLE TRANSFORM #
+    #######################
+
+    s_jobs['ContactId'] = s_jobs['ContactId'].map(contact_rel)
+    s_jobs['CreatedBy'] = s_jobs['CreatedBy'].map(user_rel)
+    s_jobs['LastUpdatedBy'] = s_jobs['LastUpdatedBy'].map(user_rel)
+    s_jobs['ShippingAddressId'] = s_jobs['ShippingAddressId'].map(add_rel)
+    s_jobs['InvoiceId'] = s_jobs['InvoiceId'].map(invoice_rel)
+    s_jobs['AffiliateId'] = 0
+    s_jobs['LeadAffiliateId'] = 0
+    s_jobs['SalesId'] = 0
+    s_jobs['TechId'] = 0
+    s_jobs['OppId'] = 0
+    s_jobs['ProductId'] = 0
+    s_jobs['PromoCode'] = 0
+    s_jobs['JumpLogId'] = 0
+    s_jobs['MarketingEmailId'] = 0
+    s_jobs['JobRecurringId'] = 0
+    s_jobs['LegacyJobRecurringInstanceId'] = 0
+    s_jobs['FileBoxId'] = 0
+
+    ###############
+    # CREATE JOBS #
+    ###############
+
+    # Add addresses to destination
+    if not s_jobs.empty:
+        destination.insert_dataframe('Job', s_jobs)
 
 
 def disable_receipt_settings(database):
