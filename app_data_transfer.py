@@ -815,7 +815,8 @@ def transfer_orders(
     destination,
     contact_rel,
     prod_rel,
-    cc_rel
+    cc_rel,
+    subplan_rel
 ):
     """
     Things to transfer before Jobs:
@@ -824,11 +825,19 @@ def transfer_orders(
 
     user_rel = get_user_relationship(source, destination)
 
-    #--------------------#
-    # ADDRESSES          #
-    #--------------------#
+    ###################
+    # RETRIEVE TABLES #
+    ###################
 
     s_addresses = source.get_table('Address')
+    s_jobs = source.get_table('Job')
+    s_invoices = source.get_table('Invoice')
+    s_payplans = source.get_table('PayPlan')
+    s_invoiceitems = source.get_table('InvoiceItem')
+    s_orderitems = source.get_table('OrderItem')
+    s_invoicepayments = source.get_table('InvoicePayments')
+    s_payments = source.get_table('Payment')
+    s_payplanitems = source.get_table('PayPlanItem')
 
     ############################
     # GENERATE NEW ADDRESS IDS #
@@ -847,23 +856,6 @@ def transfer_orders(
     new_add_ids_series = pd.Series(new_address_ids)
     s_addresses['Id'] = new_add_ids_series.values
 
-    ####################
-    # CREATE ADDRESSES #
-    ####################
-
-    # Add addresses to destination
-    if not s_addresses.empty:
-        destination.insert_dataframe('Address', s_addresses)
-
-    #--------------------#
-    # JOBS               #
-    #--------------------#
-
-    s_jobs = source.get_table('Job')
-    s_invoices = source.get_table('Invoice')
-    s_payplans = source.get_table('PayPlan')
-    s_invoiceitems = source.get_table('InvoiceItem')
-
     ########################
     # GENERATE NEW JOB IDS #
     ########################
@@ -874,11 +866,11 @@ def transfer_orders(
     increment_end = (2 * len(s_jobs)) + increment_start
     new_job_ids = [i for i in range(increment_start, increment_end, 2)]
 
-    # Create address relationship
+    # Create jobs relationship
     job_rel = dict(zip(s_jobs['Id'].tolist(), new_job_ids))
     job_rel[0] = 0
 
-    # Update missing categories to have newly generated ids
+    # Update missing jobs to have newly generated ids
     new_job_ids_series = pd.Series(new_job_ids)
     s_jobs['Id'] = new_job_ids_series.values
 
@@ -892,11 +884,11 @@ def transfer_orders(
     increment_end = (2 * len(s_invoices)) + increment_start
     new_invoice_ids = [i for i in range(increment_start, increment_end, 2)]
 
-    # Create address relationship
+    # Create invoices relationship
     invoice_rel = dict(zip(s_invoices['Id'].tolist(), new_invoice_ids))
     invoice_rel[0] = 0
 
-    # Update missing categories to have newly generated ids
+    # Update missing invoices to have newly generated ids
     new_invoice_ids_series = pd.Series(new_invoice_ids)
     s_invoices['Id'] = new_invoice_ids_series.values
 
@@ -910,15 +902,14 @@ def transfer_orders(
     increment_end = (2 * len(s_payplans)) + increment_start
     new_payplan_ids = [i for i in range(increment_start, increment_end, 2)]
 
-    # Create address relationship
+    # Create payplans relationship
     payplan_rel = dict(zip(s_payplans['Id'].tolist(), new_payplan_ids))
     payplan_rel[0] = 0
 
-    # Update missing categories to have newly generated ids
+    # Update missing payplans to have newly generated ids
     new_payplan_ids_series = pd.Series(new_payplan_ids)
     s_payplans['Id'] = new_payplan_ids_series.values
 
-# CHECK 
     ################################
     # GENERATE NEW INVOICEITEM IDS #
     ################################
@@ -929,15 +920,95 @@ def transfer_orders(
     increment_end = (2 * len(s_invoiceitems)) + increment_start
     new_invoiceitem_ids = [i for i in range(increment_start, increment_end, 2)]
 
-    # Create address relationship
+    # Create invoiceitems relationship
     invoiceitem_rel = dict(
         zip(s_invoiceitems['Id'].tolist(), new_invoiceitem_ids)
     )
     invoiceitem_rel[0] = 0
 
-    # Update missing categories to have newly generated ids
+    # Update missing invoiceitems to have newly generated ids
     new_invoiceitem_ids_series = pd.Series(new_invoiceitem_ids)
     s_invoiceitems['Id'] = new_invoiceitem_ids_series.values
+
+    ##############################
+    # GENERATE NEW ORDERITEM IDS #
+    ##############################
+
+    # Get auto increment and generate list of ids based on that
+    offset = 50
+    increment_start = destination.get_auto_increment('OrderItem') + offset
+    increment_end = (2 * len(s_orderitems)) + increment_start
+    new_orderitem_ids = [i for i in range(increment_start, increment_end, 2)]
+
+    # Create orderitems relationship
+    orderitem_rel = dict(
+        zip(s_orderitems['Id'].tolist(), new_orderitem_ids)
+    )
+    orderitem_rel[0] = 0
+
+    # Update missing orderitems to have newly generated ids
+    new_orderitem_ids_series = pd.Series(new_orderitem_ids)
+    s_orderitems['Id'] = new_orderitem_ids_series.values
+
+    ###################################
+    # GENERATE NEW INVOICEPAYMENT IDS #
+    ###################################
+
+    # Get auto increment and generate list of ids based on that
+    offset = 50
+    increment_start = destination.get_auto_increment('InvoicePayment') + offset
+    increment_end = (2 * len(s_invoicepayments)) + increment_start
+    new_ip_ids = [i for i in range(increment_start, increment_end, 2)]
+
+    # Create invoicepayments relationship
+    invoicepayment_rel = dict(
+        zip(s_invoicepayments['Id'].tolist(), new_ip_ids)
+    )
+    invoicepayment_rel[0] = 0
+
+    # Update missing invoicepayments to have newly generated ids
+    new_invoicepayment_ids_series = pd.Series(new_ip_ids)
+    s_invoicepayments['Id'] = new_invoicepayment_ids_series.values
+
+    ############################
+    # GENERATE NEW PAYMENT IDS #
+    ############################
+
+    # Get auto increment and generate list of ids based on that
+    offset = 50
+    increment_start = destination.get_auto_increment('Payment') + offset
+    increment_end = (2 * len(s_payments)) + increment_start
+    new_payment_ids = [i for i in range(increment_start, increment_end, 2)]
+
+    # Create payments relationship
+    payment_rel = dict(
+        zip(s_payments['Id'].tolist(), new_payment_ids)
+    )
+    payment_rel[0] = 0
+
+    # Update missing payments to have newly generated ids
+    new_payment_ids_series = pd.Series(new_payment_ids)
+    s_payments['Id'] = new_payment_ids_series.values
+
+    ################################
+    # GENERATE NEW PAYPLANITEM IDS #
+    ################################
+
+    # Get auto increment and generate list of ids based on that
+    offset = 50
+    increment_start = destination.get_auto_increment('PayPlanItem') + offset
+    increment_end = (2 * len(s_payplanitems)) + increment_start
+    new_payplanitem_ids = [i for i in range(increment_start, increment_end, 2)]
+
+    # Create payplanitem relationship
+    payplanitem_rel = dict(
+        zip(s_payplanitems['Id'].tolist(), new_payplanitem_ids)
+    )
+    payplanitem_rel[0] = 0
+
+    # Update missing payplanitem to have newly generated ids
+    new_payplanitem_ids_series = pd.Series(new_payplanitem_ids)
+    s_payplanitems['Id'] = new_payplanitem_ids_series.values
 
     #######################
     # JOB TABLE TRANSFORM #
@@ -960,19 +1031,11 @@ def transfer_orders(
     s_jobs['LegacyJobRecurringInstanceId'] = None
     s_jobs['FileBoxId'] = None
 
-    ###############
-    # CREATE JOBS #
-    ###############
-
-    # Add addresses to destination
-    if not s_jobs.empty:
-        destination.insert_dataframe('Job', s_jobs)
-
     ###########################
     # INVOICE TABLE TRANSFORM #
     ###########################
 
-    # Convert Groups field using product relationship dictionary
+    # Convert ProductSold field using product relationship dictionary
     new_products = []
     for products in s_invoices['ProductSold'].tolist():
         if products:
@@ -990,14 +1053,6 @@ def transfer_orders(
     s_invoices['LeadAffiliateId'] = 0
     s_invoices['MarketingEmailId'] = 0
 
-    ###################
-    # CREATE INVOICES #
-    ###################
-
-    # Add invoices to destination
-    if not s_invoices.empty:
-        destination.insert_dataframe('Invoice', s_invoices)
-
     ###########################
     # PAYPLAN TABLE TRANSFORM #
     ###########################
@@ -1010,14 +1065,6 @@ def transfer_orders(
     s_payplans['PaymentSubType'] = 'USE_DEFAULT'
     s_payplans['PayPalRefTxnId'] = None
 
-    ###################
-    # CREATE PAYPLANS #
-    ###################
-
-    # Add addresses to destination
-    if not s_payplans.empty:
-        destination.insert_dataframe('PayPlan', s_payplans)
-
     ###############################
     # INVOICEITEM TABLE TRANSFORM #
     ###############################
@@ -1026,16 +1073,86 @@ def transfer_orders(
     s_invoiceitems['JobId'] = s_invoiceitems['JobId'].map(job_rel)
     s_invoiceitems['UserCreate'] = s_invoiceitems['UserCreate'].map(user_rel)
     s_invoiceitems['ContactId'] = s_invoiceitems['ContactId'].map(contact_rel)
-    # NEED TO DO ChargeIds
-    # NEED TO DO OrderItemId
+    s_invoiceitems['ChargeId'] = None
+    s_invoiceitems['InvoiceGroup'] = None
+    s_invoiceitems['OrderItemId'] = s_invoiceitems['OrderItemId'].map(
+        orderitem_rel)
 
-    #######################
-    # CREATE INVOICEITEMS #
-    #######################
+    #############################
+    # ORDERITEM TABLE TRANSFORM #
+    #############################
+
+    s_orderitems['OrderId'] = s_orderitems['OrderId'].map(job_rel)
+    s_orderitems['ProductId'] = s_orderitems['ProductId'].map(prod_rel)
+    s_orderitems['DiscountedOrderItemId'] = 0
+    s_orderitems['InvoiceItemId'] = s_orderitems['InvoiceItemId'].map(
+        invoiceitem_rel)
+    s_orderitems['SubscriptionPlanId'] = s_orderitems.get(
+        'SubscriptionPlanId').map(subplan_rel)
+    s_orderitems['SourceOrderItemId'] = s_orderitems['SourceOrderItemId'].map(
+        orderitem_rel)
+
+    ##################################
+    # INVOICEPAYMENT TABLE TRANSFORM #
+    ##################################
+
+    s_invoicepayments['InvoiceId'] = s_invoicepayments['InvoiceId'].map(
+        invoice_rel)
+    s_invoicepayments['PaymentId'] = s_invoicepayments['PaymentId'].map(
+        payment_rel)
+    s_invoicepayments['RefundInvoicePaymentId'] = s_invoicepayments.get(
+        'RefundInvoicePaymentId').map(invoicepayment_rel)
+
+    ###########################
+    # PAYMENT TABLE TRANSFORM #
+    ###########################
+
+    s_payments['UserId'] = s_payments['UserId'].map(user_rel)
+    s_payments['ContactId'] = s_payments['ContactId'].map(contact_rel)
+    s_payments['InvoiceId'] = s_payments['InvoiceId'].map(invoice_rel)
+    s_payments['ChargeId'] = 0
+    s_payments['TransactionId'] = None
+    s_payments['CollectionMethod'] = 'MANUAL'
+    s_payments['PaymentSubType'] = 'MANUAL'
+    s_payments['PaymentGatewayId'] = 0
+
+    ###############################
+    # PAYPLANITEM TABLE TRANSFORM #
+    ###############################
+
+    s_payplanitems['PayPlanId'] = s_payplanitems['PayPlanId'].map(payplan_rel)
+
+    #################
+    # INSERT TABLES #
+    #################
 
     # Add addresses to destination
+    if not s_addresses.empty:
+        destination.insert_dataframe('Address', s_addresses)
+    # Add Jobs to destination
+    if not s_jobs.empty:
+        destination.insert_dataframe('Job', s_jobs)
+    # Add invoices to destination
+    if not s_invoices.empty:
+        destination.insert_dataframe('Invoice', s_invoices)
+    # Add payplans to destination
+    if not s_payplans.empty:
+        destination.insert_dataframe('PayPlan', s_payplans)
+    # Add invoiceitems to destination
     if not s_invoiceitems.empty:
         destination.insert_dataframe('InvoiceItem', s_invoiceitems)
+    # Add orderitems to destination
+    if not s_orderitems.empty:
+        destination.insert_dataframe('OrderItem', s_orderitems)
+    # Add invoicepayments to destination
+    if not s_invoicepayments.empty:
+        destination.insert_dataframe('InvoicePayment', s_invoicepayments)
+    # Add payments to destination
+    if not s_payments.empty:
+        destination.insert_dataframe('Payment', s_payments)
+    # Add payplanitems to destination
+    if not s_payplanitems.empty:
+        destination.insert_dataframe('InvoicePayment', s_payplanitems)
 
 
 def disable_receipt_settings(database):
