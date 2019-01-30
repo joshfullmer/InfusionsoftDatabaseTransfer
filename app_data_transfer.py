@@ -815,7 +815,8 @@ def transfer_orders(
     destination,
     contact_rel,
     prod_rel,
-    cc_rel
+    cc_rel,
+    subplan_rel
 ):
     """
     Things to transfer before Jobs:
@@ -863,6 +864,11 @@ def transfer_orders(
     s_invoices = source.get_table('Invoice')
     s_payplans = source.get_table('PayPlan')
     s_invoiceitems = source.get_table('InvoiceItem')
+    s_orderitems = source.get_table('OrderItem')
+    s_invoicepayments = source.get_table('InvoicePayments')
+    s_payments = source.get_table('Payment')
+    s_payplanitems = source.get_table('PayPlanItem')
+    s_payplanpayattempt = source.get_table('PayPlanPayAttempt')
 
     ########################
     # GENERATE NEW JOB IDS #
@@ -918,7 +924,6 @@ def transfer_orders(
     new_payplan_ids_series = pd.Series(new_payplan_ids)
     s_payplans['Id'] = new_payplan_ids_series.values
 
-# CHECK 
     ################################
     # GENERATE NEW INVOICEITEM IDS #
     ################################
@@ -938,6 +943,107 @@ def transfer_orders(
     # Update missing categories to have newly generated ids
     new_invoiceitem_ids_series = pd.Series(new_invoiceitem_ids)
     s_invoiceitems['Id'] = new_invoiceitem_ids_series.values
+
+    ##############################
+    # GENERATE NEW ORDERITEM IDS #
+    ##############################
+
+    # Get auto increment and generate list of ids based on that
+    offset = 50
+    increment_start = destination.get_auto_increment('OrderItem') + offset
+    increment_end = (2 * len(s_orderitems)) + increment_start
+    new_orderitem_ids = [i for i in range(increment_start, increment_end, 2)]
+
+    # Create address relationship
+    orderitem_rel = dict(
+        zip(s_orderitems['Id'].tolist(), new_orderitem_ids)
+    )
+    orderitem_rel[0] = 0
+
+    # Update missing categories to have newly generated ids
+    new_orderitem_ids_series = pd.Series(new_orderitem_ids)
+    s_orderitems['Id'] = new_orderitem_ids_series.values
+
+    ###################################
+    # GENERATE NEW INVOICEPAYMENT IDS #
+    ###################################
+
+    # Get auto increment and generate list of ids based on that
+    offset = 50
+    increment_start = destination.get_auto_increment('InvoicePayment') + offset
+    increment_end = (2 * len(s_invoicepayments)) + increment_start
+    new_ip_ids = [i for i in range(increment_start, increment_end, 2)]
+
+    # Create address relationship
+    invoicepayment_rel = dict(
+        zip(s_invoicepayments['Id'].tolist(), new_ip_ids)
+    )
+    invoicepayment_rel[0] = 0
+
+    # Update missing categories to have newly generated ids
+    new_invoicepayment_ids_series = pd.Series(new_ip_ids)
+    s_invoicepayments['Id'] = new_invoicepayment_ids_series.values
+
+    ############################
+    # GENERATE NEW PAYMENT IDS #
+    ############################
+
+    # Get auto increment and generate list of ids based on that
+    offset = 50
+    increment_start = destination.get_auto_increment('Payment') + offset
+    increment_end = (2 * len(s_payments)) + increment_start
+    new_payment_ids = [i for i in range(increment_start, increment_end, 2)]
+
+    # Create address relationship
+    payment_rel = dict(
+        zip(s_payments['Id'].tolist(), new_payment_ids)
+    )
+    payment_rel[0] = 0
+
+    # Update missing categories to have newly generated ids
+    new_payment_ids_series = pd.Series(new_payment_ids)
+    s_payments['Id'] = new_payment_ids_series.values
+
+    ################################
+    # GENERATE NEW PAYPLANITEM IDS #
+    ################################
+
+    # Get auto increment and generate list of ids based on that
+    offset = 50
+    increment_start = destination.get_auto_increment('PayPlanItem') + offset
+    increment_end = (2 * len(s_payplanitems)) + increment_start
+    new_payplanitem_ids = [i for i in range(increment_start, increment_end, 2)]
+
+    # Create address relationship
+    payplanitem_rel = dict(
+        zip(s_payplanitems['Id'].tolist(), new_payplanitem_ids)
+    )
+    payplanitem_rel[0] = 0
+
+    # Update missing categories to have newly generated ids
+    new_payplanitem_ids_series = pd.Series(new_payplanitem_ids)
+    s_payplanitems['Id'] = new_payplanitem_ids_series.values
+
+    ######################################
+    # GENERATE NEW PAYPLANPAYATTEMPT IDS #
+    ######################################
+
+    # Get auto increment and generate list of ids based on that
+    offset = 50
+    increment_start = (destination.get_auto_increment('PayPlanPayAttempt') +
+                       offset)
+    increment_end = (2 * len(s_payplanpayattempt)) + increment_start
+    new_pppa_ids = [i for i in range(increment_start, increment_end, 2)]
+
+    # Create address relationship
+    payplanitem_rel = dict(
+        zip(s_payplanpayattempt['Id'].tolist(), new_pppa_ids)
+    )
+    payplanitem_rel[0] = 0
+
+    # Update missing categories to have newly generated ids
+    new_payplanpayattempt_ids_series = pd.Series(new_pppa_ids)
+    s_payplanpayattempt['Id'] = new_payplanpayattempt_ids_series.values
 
     #######################
     # JOB TABLE TRANSFORM #
@@ -1026,8 +1132,10 @@ def transfer_orders(
     s_invoiceitems['JobId'] = s_invoiceitems['JobId'].map(job_rel)
     s_invoiceitems['UserCreate'] = s_invoiceitems['UserCreate'].map(user_rel)
     s_invoiceitems['ContactId'] = s_invoiceitems['ContactId'].map(contact_rel)
-    # NEED TO DO ChargeIds
-    # NEED TO DO OrderItemId
+    s_invoiceitems['ChargeId'] = None
+    s_invoiceitems['InvoiceGroup'] = None
+    s_invoiceitems['OrderItemId'] = s_invoiceitems['OrderItemId'].map(
+        orderitem_rel)
 
     #######################
     # CREATE INVOICEITEMS #
