@@ -1109,7 +1109,6 @@ os.makedirs('/relationships', exist_ok=True)
 
 # CONTACTS
 
-# TODO ask user if contacts have been created or not
 if os.path.isfile('contact_rel.json'):
     with open('contact_rel.json') as file:
         contact_rel = json.load(file)
