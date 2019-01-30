@@ -1115,6 +1115,7 @@ def transfer_orders(
     s_payments['CollectionMethod'] = 'MANUAL'
     s_payments['PaymentSubType'] = 'MANUAL'
     s_payments['PaymentGatewayId'] = 0
+    s_payments['RefundId'] = s_payments['RefundId'].map(payment_rel)
 
     ###############################
     # PAYPLANITEM TABLE TRANSFORM #
