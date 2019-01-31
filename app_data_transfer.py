@@ -658,10 +658,15 @@ def transfer_products(source, destination):
     return prod_rel, subplan_rel
 
 
-def transfer_opportunities(source, destination, contact_rel):
+def transfer_opportunities(
+    source,
+    destination,
+    contact_rel,
+    prod_rel,
+    subplan_rel
+):
     """
     TODO:
-    - Product Interests
     - AffiliateID
     - PayPlanID
     - AssignedTo group
@@ -753,6 +758,36 @@ def transfer_opportunities(source, destination, contact_rel):
     # Product Interests #
     #####################
 
+    # Get Product Interests Table
+    s_allpi = source.get_table('ProductInterest')
+    s_oppi = s_allpi.loc[s_allpi['ObjectType'] == 'Opportunity']
+
+    ####################################
+    # GENERATE NEW PRODUCTINTEREST IDS #
+    ####################################
+
+    # Get auto increment and generate list of ids based on that
+    offset = 50
+    increment_start = destination.get_auto_increment('ProductInterest') + offset
+    increment_end = (2 * len(s_oppi)) + increment_start
+    new_oppi_ids = [i for i in range(increment_start, increment_end, 2)]
+
+    # Create prodinterest relationship
+    oppi_rel = dict(zip(s_oppi['Id'].tolist(), new_job_ids))
+    oppi_rel[0] = 0
+
+    # Update missing prodinterest to have newly generated ids
+    new_oppi_ids_series = pd.Series(new_oppi_ids)
+    s_oppi['Id'] = new_oppi_ids_series.values
+
+    # Field mapping
+
+    s_prodinterest['ProductId'] = s_prodinterest['ProductId'].map(prod_rel)
+    s_prodinterest['ObjectId'] = s_prodinterest['ObjectId'].map(opp_rel)
+    s_prodinterest['SubscriptionPlanId'] = opps['SubscriptionPlanId'].map(
+        subplan_rel)
+    s_prodinterest['LegacyProductId'] = None
+
     return opp_rel
 
 
@@ -835,7 +870,7 @@ def transfer_orders(
     s_payplans = source.get_table('PayPlan')
     s_invoiceitems = source.get_table('InvoiceItem')
     s_orderitems = source.get_table('OrderItem')
-    s_invoicepayments = source.get_table('InvoicePayments')
+    s_invoicepayments = source.get_table('InvoicePayment')
     s_payments = source.get_table('Payment')
     s_payplanitems = source.get_table('PayPlanItem')
 
@@ -1039,7 +1074,10 @@ def transfer_orders(
     new_products = []
     for products in s_invoices['ProductSold'].tolist():
         if products:
-            product_ids = [str(prod_rel[int(x)]) for x in products.split(',')]
+            product_ids = []
+            for x in products.split(','):
+                if int(x) in prod_rel.keys():
+                    product_ids.append(str(prod_rel[int(x)]))
             new_products.append(','.join(product_ids))
         else:
             new_products.append(products)
@@ -1073,7 +1111,7 @@ def transfer_orders(
     s_invoiceitems['JobId'] = s_invoiceitems['JobId'].map(job_rel)
     s_invoiceitems['UserCreate'] = s_invoiceitems['UserCreate'].map(user_rel)
     s_invoiceitems['ContactId'] = s_invoiceitems['ContactId'].map(contact_rel)
-    s_invoiceitems['ChargeId'] = None
+    s_invoiceitems['ChargeIds'] = None
     s_invoiceitems['InvoiceGroup'] = None
     s_invoiceitems['OrderItemId'] = s_invoiceitems['OrderItemId'].map(
         orderitem_rel)
@@ -1154,6 +1192,8 @@ def transfer_orders(
     # Add payplanitems to destination
     if not s_payplanitems.empty:
         destination.insert_dataframe('InvoicePayment', s_payplanitems)
+
+    return job_rel
 
 
 def disable_receipt_settings(database):
@@ -1294,6 +1334,23 @@ else:
     )
     with open('sub_rel.json', 'w') as file:
         json.dump(sub_rel, file)
+
+# ORDERS
+if os.path.isfile('job_rel.json'):
+    with open('job_rel.json') as file:
+        job_rel = json.load(file)
+    job_rel = {int(k): int(v) for k, v in job_rel.items()}
+else:
+    job_rel = transfer_orders(
+        source,
+        destination,
+        contact_rel,
+        prod_rel,
+        cc_rel,
+        subplan_rel
+    )
+    with open('job_rel.json', 'w') as file:
+        json.dump(job_rel, file)
 
 # set merchant account to USE_DEFAULT, Id 0
 
