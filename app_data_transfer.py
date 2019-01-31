@@ -14,11 +14,6 @@ destination = Database('ij520', 27001)
 # TODO:
 # Transfer most recent EmailStatus
 # Opportunity StageMove
-# Opportunity Product Interest
-
-# TODO later:
-# Transfer order history
-
 
 def transfer_lead_sources(source, destination):
     # Get matching lead source categories
@@ -760,7 +755,7 @@ def transfer_opportunities(
 
     # Get Product Interests Table
     s_allpi = source.get_table('ProductInterest')
-    s_oppi = s_allpi.loc[s_allpi['ObjectType'] == 'Opportunity']
+    s_oppi = s_allpi.loc[s_allpi['ObjType'] == 'Opportunity']
 
     ####################################
     # GENERATE NEW PRODUCTINTEREST IDS #
@@ -773,7 +768,7 @@ def transfer_opportunities(
     new_oppi_ids = [i for i in range(increment_start, increment_end, 2)]
 
     # Create prodinterest relationship
-    oppi_rel = dict(zip(s_oppi['Id'].tolist(), new_job_ids))
+    oppi_rel = dict(zip(s_oppi['Id'].tolist(), new_oppi_ids))
     oppi_rel[0] = 0
 
     # Update missing prodinterest to have newly generated ids
@@ -782,11 +777,11 @@ def transfer_opportunities(
 
     # Field mapping
 
-    s_prodinterest['ProductId'] = s_prodinterest['ProductId'].map(prod_rel)
-    s_prodinterest['ObjectId'] = s_prodinterest['ObjectId'].map(opp_rel)
-    s_prodinterest['SubscriptionPlanId'] = opps['SubscriptionPlanId'].map(
+    s_oppi['ProductId'] = s_oppi['ProductId'].map(prod_rel)
+    s_oppi['ObjectId'] = s_oppi['ObjectId'].map(opp_rel)
+    s_oppi['SubscriptionPlanId'] = s_oppi['SubscriptionPlanId'].map(
         subplan_rel)
-    s_prodinterest['LegacyProductId'] = None
+    s_oppi['LegacyProductId'] = None
 
     return opp_rel
 
@@ -1189,9 +1184,9 @@ def transfer_orders(
     # Add payments to destination
     if not s_payments.empty:
         destination.insert_dataframe('Payment', s_payments)
-    # Add payplanitems to destination
+    # Add invoicepayments to destination
     if not s_payplanitems.empty:
-        destination.insert_dataframe('InvoicePayment', s_payplanitems)
+        destination.insert_dataframe('PayPlanItem', s_payplanitems)
 
     return job_rel
 
@@ -1301,7 +1296,7 @@ if os.path.isfile('opp_rel.json'):
         opp_rel = json.load(file)
     opp_rel = {int(k): int(v) for k, v in opp_rel.items()}
 else:
-    opp_rel = transfer_opportunities(source, destination, contact_rel)
+    opp_rel = transfer_opportunities(source, destination, contact_rel, prod_rel, subplan_rel)
     with open('opp_rel.json', 'w') as file:
         json.dump(opp_rel, file)
 
