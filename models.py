@@ -189,7 +189,7 @@ class Database:
         # Insert rows from temp CreditCard table into real CreditCard table
         insert_credit_cards = (f"""
             INSERT INTO CreditCard
-            SELECT * FROM {cc_xfer_table};
+            SELECT * FROM {cc_xfer_table}
             WHERE ContactId IN (SELECT {d_id} FROM {contact_rel_table});
         """)
         self.cursor.execute(insert_credit_cards)
