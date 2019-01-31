@@ -186,17 +186,11 @@ class Database:
         """)
         self.cursor.execute(update_cc_ids)
 
-        # Remove non-matching credit cards from temp CreditCard table
-        delete_null_ccs = (f"""
-            DELETE FROM {cc_xfer_table}
-            WHERE ContactId NOT IN (SELECT {d_id} from {contact_rel_table});
-        """)
-        self.cursor.execute(delete_null_ccs)
-
         # Insert rows from temp CreditCard table into real CreditCard table
         insert_credit_cards = (f"""
             INSERT INTO CreditCard
             SELECT * FROM {cc_xfer_table};
+            WHERE ContactId IN (SELECT {d_id} FROM {contact_rel_table});
         """)
         self.cursor.execute(insert_credit_cards)
 
