@@ -9,7 +9,7 @@ from models import Database
 #  !!!!!!REQUIRES APP RELOAD WHEN COMPLETE!!!!!!
 
 source = Database('qj154', 27011)
-destination = Database('ij520', 27001)
+destination = Database('fy664', 27002)
 
 # TODO:
 # Transfer most recent EmailStatus
@@ -228,7 +228,7 @@ def transfer_contacts(source, destination):
     new_ids = [i for i in range(increment_start, increment_end, 2)]
 
     # Generate contact relationship from generated id list
-    contact_rel = {}
+    contact_rel = {0: 0}
     for i, id_num in enumerate(old_ids):
         contact_rel[id_num] = new_ids[i]
 

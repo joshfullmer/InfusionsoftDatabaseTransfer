@@ -1,5 +1,6 @@
 from mysql.connector import connect
 import pandas as pd
+import re
 
 
 class Database:
@@ -94,7 +95,8 @@ class Database:
                 elif cell is None or pd.isnull(cell):
                     row_values.append('NULL')
                 else:
-                    row_values.append('"' + str(cell) + '"')
+                    string = re.sub(r'"', '\\"', str(cell))
+                    row_values.append('"' + string + '"')
             row_string = '(' + ','.join(row_values) + ')'
             row_strings.append(row_string)
         values = ',\n'.join(row_strings)
