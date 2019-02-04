@@ -1390,8 +1390,8 @@ else:
         json.dump(job_rel, file)
 
 # jobtojobrecurring
-if os.path.isfile('jtjr_rel.json'):
-    with open('jtjr_rel.json') as file:
+if os.path.isfile('/relationships/jtjr_rel.json'):
+    with open('/relationships/jtjr_rel.json') as file:
         jtjr_rel = json.load(file)
     jtjr_rel = {int(k): int(v) for k, v in jtjr_rel.items()}
 else:
@@ -1401,7 +1401,7 @@ else:
         job_rel,
         sub_rel
     )
-    with open('jtjr_rel.json', 'w') as file:
+    with open('/relationships/jtjr_rel.json', 'w') as file:
         json.dump(jtjr_rel, file)
 
 # set merchant account to USE_DEFAULT, Id 0
