@@ -839,6 +839,45 @@ def transfer_subscriptions(
 
     return sub_rel
 
+def transfer_jobtojobrecurring(
+    source,
+    destination,
+    job_rel,
+    sub_rel
+);
+
+    s_jtjr = source.get_table('JobToJobRecurring')
+
+    ######################################
+    # GENERATE NEW JOBTOJOBRECURRING IDS #
+    ######################################
+
+    # Get auto increment and generate list of ids based on that
+    offset = 50
+    increment_start = destination.get_auto_increment('JobToJobRecurring') + offset
+    increment_end = (2 * len(s_jtjr)) + increment_start
+    new_jtjr_ids = [i for i in range(increment_start, increment_end, 2)]
+
+    # Create jobtojobrecurring relationship
+    jtjr_rel = dict(zip(s_addresses['Id'].tolist(), new_jtjr_ids))
+
+    # Update missing jobtojobrecurrings to have newly generated ids
+    new_jtjr_ids_series = pd.Series(new_jtjr_ids)
+    s_jtjr['Id'] = new_jtjr_ids_series.values
+
+    #####################################
+    # JOBTOJOBRECURRING TABLE TRANSFORM #
+    #####################################
+
+    s_jtjr['JobId'] = s_jtjr['JobId'].map(job_rel)
+    s_jtjr['JobRecurringId'] = s_jtjr['JobRecurringId'].map(sub_rel)
+    
+    # Add jobtojobrecurring to destination
+    if not s_jtjr.empty:
+        destination.insert_dataframe('JobToJobRecurring', s_jtjr)
+
+    return jobtojobrecurring_rel
+
 
 def transfer_orders(
     source,
@@ -1346,6 +1385,21 @@ else:
     )
     with open('job_rel.json', 'w') as file:
         json.dump(job_rel, file)
+
+# jobtojobrecurring
+if os.path.isfile('jobtojobrecurring_rel.json'):
+    with open('jobtojobrecurring_rel.json') as file:
+        jobtojobrecurring_rel = json.load(file)
+    jobtojobrecurring_rel = {int(k): int(v) for k, v in jobtojobrecurring_rel.items()}
+else:
+    jobtojobrecurring_rel_rel = transfer_jobtojobrecurring_rel(
+        source,
+        destination,
+        job_rel,
+        subplan_rel
+    )
+    with open('jobtojobrecurring_rel.json', 'w') as file:
+        json.dump(jobtojobrecurring_rel_rel, file)
 
 # set merchant account to USE_DEFAULT, Id 0
 
