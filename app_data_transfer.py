@@ -1304,13 +1304,13 @@ os.makedirs('/relationships', exist_ok=True)
 
 # CONTACTS
 
-if os.path.isfile('contact_rel.json'):
-    with open('contact_rel.json') as file:
+if os.path.isfile('/relationships/contact_rel.json'):
+    with open('/relationships/contact_rel.json') as file:
         contact_rel = json.load(file)
     contact_rel = {int(k): int(v) for k, v in contact_rel.items()}
 else:
     contact_rel = transfer_contacts(source, destination)
-    with open('contact_rel.json', 'w') as file:
+    with open('/relationships/contact_rel.json', 'w') as file:
         json.dump(contact_rel, file)
     transfer_custom_fields(source, destination, contact_rel)
 
@@ -1318,13 +1318,13 @@ transfer_tag_applications(source, destination, contact_rel)
 
 # CONTACT ACTIONS
 
-if os.path.isfile('action_rel.json'):
-    with open('action_rel.json') as file:
+if os.path.isfile('/relationships/action_rel.json'):
+    with open('/relationships/action_rel.json') as file:
         action_rel = json.load(file)
     action_rel = {int(k): int(v) for k, v in action_rel.items()}
 else:
     action_rel = transfer_contact_actions(source, destination, contact_rel)
-    with open('action_rel.json', 'w') as file:
+    with open('/relationships/action_rel.json', 'w') as file:
         json.dump(action_rel, file)
 
 # PRODUCTS AND SUBSCRIPTION PLANS
@@ -1333,31 +1333,31 @@ prod_rel, subplan_rel = transfer_products(source, destination)
 
 # OPPORTUNITIES
 
-if os.path.isfile('opp_rel.json'):
-    with open('opp_rel.json') as file:
+if os.path.isfile('/relationships/opp_rel.json'):
+    with open('/relationships/opp_rel.json') as file:
         opp_rel = json.load(file)
     opp_rel = {int(k): int(v) for k, v in opp_rel.items()}
 else:
     opp_rel = transfer_opportunities(source, destination, contact_rel, prod_rel, subplan_rel)
-    with open('opp_rel.json', 'w') as file:
+    with open('/relationships/opp_rel.json', 'w') as file:
         json.dump(opp_rel, file)
 
 # CREDIT CARDS
 
-if os.path.isfile('cc_rel.json'):
-    with open('cc_rel.json') as file:
+if os.path.isfile('/relationships/cc_rel.json'):
+    with open('/relationships/cc_rel.json') as file:
         cc_rel = json.load(file)
     cc_rel = {int(k): int(v) for k, v in cc_rel.items()}
 else:
     cc_rel = transfer_credit_cards(source.appname, destination, contact_rel)
-    with open('cc_rel.json', 'w') as file:
+    with open('/relationships/cc_rel.json', 'w') as file:
         json.dump(cc_rel, file)
 cc_rel[0] = 0
 
 # SUBSCRIPTIONS
 
-if os.path.isfile('sub_rel.json'):
-    with open('sub_rel.json') as file:
+if os.path.isfile('/relationships/sub_rel.json'):
+    with open('/relationships/sub_rel.json') as file:
         sub_rel = json.load(file)
     sub_rel = {int(k): int(v) for k, v in sub_rel.items()}
 else:
@@ -1369,12 +1369,12 @@ else:
         prod_rel,
         subplan_rel
     )
-    with open('sub_rel.json', 'w') as file:
+    with open('/relationships/sub_rel.json', 'w') as file:
         json.dump(sub_rel, file)
 
 # ORDERS
-if os.path.isfile('job_rel.json'):
-    with open('job_rel.json') as file:
+if os.path.isfile('/relationships/job_rel.json'):
+    with open('/relationships/job_rel.json') as file:
         job_rel = json.load(file)
     job_rel = {int(k): int(v) for k, v in job_rel.items()}
 else:
@@ -1386,7 +1386,7 @@ else:
         cc_rel,
         subplan_rel
     )
-    with open('job_rel.json', 'w') as file:
+    with open('/relationships/job_rel.json', 'w') as file:
         json.dump(job_rel, file)
 
 # jobtojobrecurring
