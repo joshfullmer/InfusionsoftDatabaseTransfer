@@ -9,7 +9,7 @@ from models import Database
 #  !!!!!!REQUIRES APP RELOAD WHEN COMPLETE!!!!!!
 
 source = Database('qj154', 27011)
-destination = Database('fy664', 27002)
+destination = Database('ij520', 27001)
 
 # TODO:
 # Transfer most recent EmailStatus
@@ -424,18 +424,19 @@ def transfer_custom_fields(source, destination, contact_rel):
         )
 
     # Update matching relationship with new Ids
+    d_fieldname = f'FieldName_{destination.appname}'
     matches.loc[matches[d_id].isnull(), d_id] = new_ids_series.values
     matches[d_id] = matches[d_id].astype(int)
     matches.rename(
-        {'NewDatabaseName': f'FieldName_{destination.appname}'},
+        {'NewDatabaseName': d_fieldname}, 
         axis=1,
         inplace=True,
     )
     cf_rel = {}
     for row in matches.itertuples():
-        old_id = getattr(row, s_id)
-        new_id = getattr(row, d_id)
-        cf_rel[old_id] = new_id
+        old_fieldname = getattr(row, s_fieldname)
+        new_fieldname = getattr(row, d_fieldname)
+        cf_rel[old_fieldname] = new_fieldname
 
     #########################
     # ADD Custom Field Data #
@@ -446,7 +447,7 @@ def transfer_custom_fields(source, destination, contact_rel):
     cf_data['Id'] = cf_data['Id'].map(contact_rel)
     cf_data_to_import = cf_data[cf_data['Id'].notnull()].copy()
     cf_data_to_import['Id'] = cf_data_to_import['Id'].astype(int)
-    cf_data_to_import = cf_data_to_import[d_db_names]
+    cf_data_to_import.rename(cf_rel, axis=1, inplace=True)
 
     # TODO: add messaging for when they need to purge custom fields
     if not cf_data_to_import.empty:
@@ -755,7 +756,7 @@ def transfer_opportunities(
 
     # Get Product Interests Table
     s_allpi = source.get_table('ProductInterest')
-    s_oppi = s_allpi.loc[s_allpi['ObjType'] == 'Opportunity']
+    s_oppi = s_allpi.loc[s_allpi['ObjType'] == 'Opportunity'].copy()
 
     ####################################
     # GENERATE NEW PRODUCTINTEREST IDS #
@@ -844,7 +845,7 @@ def transfer_jobtojobrecurring(
     destination,
     job_rel,
     sub_rel
-);
+):
 
     s_jtjr = source.get_table('JobToJobRecurring')
 
@@ -859,7 +860,7 @@ def transfer_jobtojobrecurring(
     new_jtjr_ids = [i for i in range(increment_start, increment_end, 2)]
 
     # Create jobtojobrecurring relationship
-    jtjr_rel = dict(zip(s_addresses['Id'].tolist(), new_jtjr_ids))
+    jtjr_rel = dict(zip(s_jtjr['Id'].tolist(), new_jtjr_ids))
 
     # Update missing jobtojobrecurrings to have newly generated ids
     new_jtjr_ids_series = pd.Series(new_jtjr_ids)
@@ -872,6 +873,8 @@ def transfer_jobtojobrecurring(
     s_jtjr['JobId'] = s_jtjr['JobId'].map(job_rel)
     s_jtjr['JobRecurringId'] = s_jtjr['JobRecurringId'].map(sub_rel)
     
+    s_jtjr = s_jtjr[s_jtjr['JobId'].notnull() & s_jtjr['JobRecurringId'].notnull()]
+
     # Add jobtojobrecurring to destination
     if not s_jtjr.empty:
         destination.insert_dataframe('JobToJobRecurring', s_jtjr)
@@ -1387,19 +1390,19 @@ else:
         json.dump(job_rel, file)
 
 # jobtojobrecurring
-if os.path.isfile('jobtojobrecurring_rel.json'):
-    with open('jobtojobrecurring_rel.json') as file:
-        jobtojobrecurring_rel = json.load(file)
-    jobtojobrecurring_rel = {int(k): int(v) for k, v in jobtojobrecurring_rel.items()}
+if os.path.isfile('jtjr_rel.json'):
+    with open('jtjr_rel.json') as file:
+        jtjr_rel = json.load(file)
+    jtjr_rel = {int(k): int(v) for k, v in jtjr_rel.items()}
 else:
-    jobtojobrecurring_rel_rel = transfer_jobtojobrecurring_rel(
+    jtjr_rel = transfer_jobtojobrecurring(
         source,
         destination,
         job_rel,
-        subplan_rel
+        sub_rel
     )
-    with open('jobtojobrecurring_rel.json', 'w') as file:
-        json.dump(jobtojobrecurring_rel_rel, file)
+    with open('jtjr_rel.json', 'w') as file:
+        json.dump(jtjr_rel, file)
 
 # set merchant account to USE_DEFAULT, Id 0
 
