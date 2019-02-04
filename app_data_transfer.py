@@ -876,7 +876,7 @@ def transfer_jobtojobrecurring(
     if not s_jtjr.empty:
         destination.insert_dataframe('JobToJobRecurring', s_jtjr)
 
-    return jobtojobrecurring_rel
+    return jtjr_rel
 
 
 def transfer_orders(
