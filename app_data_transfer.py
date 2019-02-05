@@ -2,6 +2,7 @@ import json
 import os
 import pandas as pd
 import re
+import datetime as dt
 
 from models import Database
 
@@ -14,6 +15,7 @@ destination = Database('ij520', 27001)
 # TODO:
 # Transfer most recent EmailStatus
 # Opportunity StageMove
+
 
 def transfer_lead_sources(source, destination):
     # Get matching lead source categories
@@ -272,6 +274,9 @@ def transfer_contacts(source, destination):
     # Transfer company records
     destination.insert_dataframe('Company', companies)
 
+    # Apply Tag to Transferred Contacts
+    apply_transfer_tag(source, destination, contact_rel)
+
     return contact_rel
 
 
@@ -441,13 +446,16 @@ def transfer_custom_fields(source, destination, contact_rel):
     #########################
     # ADD Custom Field Data #
     #########################
-    cf_data = source.get_table('Custom_Contact')
+    s_fieldnames = s_contact_cfs['FieldName'].tolist()
+    s_fieldnames.append('Id')
+
+    cf_data = source.get_table('Custom_Contact').filter(items=s_fieldnames)
     cf_data.rename(fieldname_rel, axis=1, inplace=True)
     d_db_names = destination.get_column_names('Custom_Contact')
     cf_data['Id'] = cf_data['Id'].map(contact_rel)
     cf_data_to_import = cf_data[cf_data['Id'].notnull()].copy()
     cf_data_to_import['Id'] = cf_data_to_import['Id'].astype(int)
-    cf_data_to_import.rename(cf_rel, axis=1, inplace=True)
+    cf_data_to_import.rename(fieldname_rel, axis=1, inplace=True)
 
     # TODO: add messaging for when they need to purge custom fields
     if not cf_data_to_import.empty:
@@ -504,6 +512,37 @@ def transfer_tag_applications(source, destination, contact_rel):
     # Add tag applications
     if not tag_apps_to_import.empty:
         destination.insert_dataframe('ContactGroupAssign', tag_apps_to_import)
+
+
+def apply_transfer_tag(source, destination, contact_rel):
+    """
+    Transfers the tags which are applied to contacts.
+    """
+
+    # Get auto increment and generate list of ids based on that
+    offset = 10
+    tran_tag_id = destination.get_auto_increment('ContactGroup') + offset
+    tran_tag = f'transferred from {source.appname} to {destination.appname}'
+    now = dt.datetime.now()
+    tran_date_created = now.strftime('%Y-%m-%d %H:%M:%S')
+    tran_dict = {
+        'Id': tran_tag_id,
+        'GroupName': tran_tag,
+        'GroupCategoryId': 0,
+        'GroupDescription': '',
+        'ImportId': 0
+        }
+    tran_df = pd.DataFrame.from_dict([tran_dict])
+    destination.insert_dataframe('ContactGroup', tran_df)
+
+    contact_ids = [v for _, v in contact_rel.items()]
+    tag_apps = pd.DataFrame({'ContactId': contact_ids})
+    tag_apps['GroupId'] = tran_tag_id
+    tag_apps['DateCreated'] = tran_date_created
+
+    # Add tag applications
+    if not tag_apps.empty:
+        destination.insert_dataframe('ContactGroupAssign', tag_apps)
 
 
 def transfer_contact_actions(source, destination, contact_rel):
@@ -764,7 +803,8 @@ def transfer_opportunities(
 
     # Get auto increment and generate list of ids based on that
     offset = 50
-    increment_start = destination.get_auto_increment('ProductInterest') + offset
+    increment_start = destination.get_auto_increment(
+        'ProductInterest') + offset
     increment_end = (2 * len(s_oppi)) + increment_start
     new_oppi_ids = [i for i in range(increment_start, increment_end, 2)]
 
@@ -840,6 +880,7 @@ def transfer_subscriptions(
 
     return sub_rel
 
+
 def transfer_jobtojobrecurring(
     source,
     destination,
@@ -855,7 +896,8 @@ def transfer_jobtojobrecurring(
 
     # Get auto increment and generate list of ids based on that
     offset = 50
-    increment_start = destination.get_auto_increment('JobToJobRecurring') + offset
+    increment_start = destination.get_auto_increment(
+        'JobToJobRecurring') + offset
     increment_end = (2 * len(s_jtjr)) + increment_start
     new_jtjr_ids = [i for i in range(increment_start, increment_end, 2)]
 
@@ -872,8 +914,9 @@ def transfer_jobtojobrecurring(
 
     s_jtjr['JobId'] = s_jtjr['JobId'].map(job_rel)
     s_jtjr['JobRecurringId'] = s_jtjr['JobRecurringId'].map(sub_rel)
-    
-    s_jtjr = s_jtjr[s_jtjr['JobId'].notnull() & s_jtjr['JobRecurringId'].notnull()]
+
+    s_jtjr = s_jtjr[s_jtjr['JobId'].notnull() & s_jtjr[
+        'JobRecurringId'].notnull()]
 
     # Add jobtojobrecurring to destination
     if not s_jtjr.empty:
@@ -1310,9 +1353,9 @@ if os.path.isfile('/relationships/contact_rel.json'):
     contact_rel = {int(k): int(v) for k, v in contact_rel.items()}
 else:
     contact_rel = transfer_contacts(source, destination)
+    transfer_custom_fields(source, destination, contact_rel)
     with open('/relationships/contact_rel.json', 'w') as file:
         json.dump(contact_rel, file)
-    transfer_custom_fields(source, destination, contact_rel)
 
 transfer_tag_applications(source, destination, contact_rel)
 
@@ -1338,7 +1381,13 @@ if os.path.isfile('/relationships/opp_rel.json'):
         opp_rel = json.load(file)
     opp_rel = {int(k): int(v) for k, v in opp_rel.items()}
 else:
-    opp_rel = transfer_opportunities(source, destination, contact_rel, prod_rel, subplan_rel)
+    opp_rel = transfer_opportunities(
+        source,
+        destination,
+        contact_rel,
+        prod_rel,
+        subplan_rel
+    )
     with open('/relationships/opp_rel.json', 'w') as file:
         json.dump(opp_rel, file)
 
