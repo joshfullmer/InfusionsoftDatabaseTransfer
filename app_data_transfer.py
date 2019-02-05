@@ -8,9 +8,6 @@ from models import Database
 
 #  !!!!!!REQUIRES APP RELOAD WHEN COMPLETE!!!!!!
 
-source = Database('qj154', 27011)
-destination = Database('ij520', 27001)
-
 # TODO:
 # Transfer most recent EmailStatus
 # Opportunity StageMove
@@ -323,7 +320,7 @@ def transfer_custom_fields(source, destination, contact_rel):
         if pd.isnull(row[d_id]):
             return handle_db_names(row[s_fieldname], d_db_names)
         else:
-            return row[f'FieldName_{destination.appname}']
+            return row[f'FieldName_{source.appname}']
 
     matches['NewDatabaseName'] = matches.apply(
         lambda x: fieldname_match_check(x),
@@ -428,7 +425,7 @@ def transfer_custom_fields(source, destination, contact_rel):
     matches.loc[matches[d_id].isnull(), d_id] = new_ids_series.values
     matches[d_id] = matches[d_id].astype(int)
     matches.rename(
-        {'NewDatabaseName': d_fieldname}, 
+        {'NewDatabaseName': d_fieldname},
         axis=1,
         inplace=True,
     )
@@ -764,7 +761,8 @@ def transfer_opportunities(
 
     # Get auto increment and generate list of ids based on that
     offset = 50
-    increment_start = destination.get_auto_increment('ProductInterest') + offset
+    increment_start = (destination.get_auto_increment('ProductInterest') +
+                       offset)
     increment_end = (2 * len(s_oppi)) + increment_start
     new_oppi_ids = [i for i in range(increment_start, increment_end, 2)]
 
@@ -840,6 +838,7 @@ def transfer_subscriptions(
 
     return sub_rel
 
+
 def transfer_jobtojobrecurring(
     source,
     destination,
@@ -855,7 +854,8 @@ def transfer_jobtojobrecurring(
 
     # Get auto increment and generate list of ids based on that
     offset = 50
-    increment_start = destination.get_auto_increment('JobToJobRecurring') + offset
+    increment_start = (destination.get_auto_increment('JobToJobRecurring') +
+                       offset)
     increment_end = (2 * len(s_jtjr)) + increment_start
     new_jtjr_ids = [i for i in range(increment_start, increment_end, 2)]
 
@@ -872,8 +872,9 @@ def transfer_jobtojobrecurring(
 
     s_jtjr['JobId'] = s_jtjr['JobId'].map(job_rel)
     s_jtjr['JobRecurringId'] = s_jtjr['JobRecurringId'].map(sub_rel)
-    
-    s_jtjr = s_jtjr[s_jtjr['JobId'].notnull() & s_jtjr['JobRecurringId'].notnull()]
+
+    s_jtjr = s_jtjr[s_jtjr['JobId'].notnull()
+                    & s_jtjr['JobRecurringId'].notnull()]
 
     # Add jobtojobrecurring to destination
     if not s_jtjr.empty:
@@ -1292,124 +1293,138 @@ def handle_db_names(fieldname, existing_db_names):
     return fieldname
 
 
-# Returns boolean if dropdowns have been modified or not
-# This is so we can notify the user that they need to reload frontend
-dropdowns_modified = transfer_dropdown_values(source, destination)
+if __name__ == '__main__':
+    source = Database('qj154', 27011)
+    destination = Database('ij520', 27001)
 
-# Disable receipt triggers before transfering payments
-disable_receipt_settings(destination)
+    # Returns boolean if dropdowns have been modified or not
+    # This is so we can notify the user that they need to reload frontend
+    dropdowns_modified = transfer_dropdown_values(source, destination)
 
-# Make relationship directory if not exists
-os.makedirs('/relationships', exist_ok=True)
+    # Disable receipt triggers before transfering payments
+    disable_receipt_settings(destination)
 
-# CONTACTS
+    # Make relationship directory if not exists
+    os.makedirs('/relationships', exist_ok=True)
 
-if os.path.isfile('/relationships/contact_rel.json'):
-    with open('/relationships/contact_rel.json') as file:
-        contact_rel = json.load(file)
-    contact_rel = {int(k): int(v) for k, v in contact_rel.items()}
-else:
-    contact_rel = transfer_contacts(source, destination)
-    with open('/relationships/contact_rel.json', 'w') as file:
-        json.dump(contact_rel, file)
-    transfer_custom_fields(source, destination, contact_rel)
+    # CONTACTS
 
-transfer_tag_applications(source, destination, contact_rel)
+    if os.path.isfile('/relationships/contact_rel.json'):
+        with open('/relationships/contact_rel.json') as file:
+            contact_rel = json.load(file)
+        contact_rel = {int(k): int(v) for k, v in contact_rel.items()}
+    else:
+        contact_rel = transfer_contacts(source, destination)
+        with open('/relationships/contact_rel.json', 'w') as file:
+            json.dump(contact_rel, file)
+        transfer_custom_fields(source, destination, contact_rel)
 
-# CONTACT ACTIONS
+    transfer_tag_applications(source, destination, contact_rel)
 
-if os.path.isfile('/relationships/action_rel.json'):
-    with open('/relationships/action_rel.json') as file:
-        action_rel = json.load(file)
-    action_rel = {int(k): int(v) for k, v in action_rel.items()}
-else:
-    action_rel = transfer_contact_actions(source, destination, contact_rel)
-    with open('/relationships/action_rel.json', 'w') as file:
-        json.dump(action_rel, file)
+    # CONTACT ACTIONS
 
-# PRODUCTS AND SUBSCRIPTION PLANS
+    if os.path.isfile('/relationships/action_rel.json'):
+        with open('/relationships/action_rel.json') as file:
+            action_rel = json.load(file)
+        action_rel = {int(k): int(v) for k, v in action_rel.items()}
+    else:
+        action_rel = transfer_contact_actions(source, destination, contact_rel)
+        with open('/relationships/action_rel.json', 'w') as file:
+            json.dump(action_rel, file)
 
-prod_rel, subplan_rel = transfer_products(source, destination)
+    # PRODUCTS AND SUBSCRIPTION PLANS
 
-# OPPORTUNITIES
+    prod_rel, subplan_rel = transfer_products(source, destination)
 
-if os.path.isfile('/relationships/opp_rel.json'):
-    with open('/relationships/opp_rel.json') as file:
-        opp_rel = json.load(file)
-    opp_rel = {int(k): int(v) for k, v in opp_rel.items()}
-else:
-    opp_rel = transfer_opportunities(source, destination, contact_rel, prod_rel, subplan_rel)
-    with open('/relationships/opp_rel.json', 'w') as file:
-        json.dump(opp_rel, file)
+    # OPPORTUNITIES
 
-# CREDIT CARDS
+    if os.path.isfile('/relationships/opp_rel.json'):
+        with open('/relationships/opp_rel.json') as file:
+            opp_rel = json.load(file)
+        opp_rel = {int(k): int(v) for k, v in opp_rel.items()}
+    else:
+        opp_rel = transfer_opportunities(
+            source,
+            destination,
+            contact_rel,
+            prod_rel,
+            subplan_rel
+        )
+        with open('/relationships/opp_rel.json', 'w') as file:
+            json.dump(opp_rel, file)
 
-if os.path.isfile('/relationships/cc_rel.json'):
-    with open('/relationships/cc_rel.json') as file:
-        cc_rel = json.load(file)
-    cc_rel = {int(k): int(v) for k, v in cc_rel.items()}
-else:
-    cc_rel = transfer_credit_cards(source.appname, destination, contact_rel)
-    with open('/relationships/cc_rel.json', 'w') as file:
-        json.dump(cc_rel, file)
-cc_rel[0] = 0
+    # CREDIT CARDS
 
-# SUBSCRIPTIONS
+    if os.path.isfile('/relationships/cc_rel.json'):
+        with open('/relationships/cc_rel.json') as file:
+            cc_rel = json.load(file)
+        cc_rel = {int(k): int(v) for k, v in cc_rel.items()}
+    else:
+        cc_rel = transfer_credit_cards(
+            source.appname,
+            destination,
+            contact_rel
+        )
+        with open('/relationships/cc_rel.json', 'w') as file:
+            json.dump(cc_rel, file)
+    cc_rel[0] = 0
 
-if os.path.isfile('/relationships/sub_rel.json'):
-    with open('/relationships/sub_rel.json') as file:
-        sub_rel = json.load(file)
-    sub_rel = {int(k): int(v) for k, v in sub_rel.items()}
-else:
-    sub_rel = transfer_subscriptions(
-        source,
-        destination,
-        contact_rel,
-        cc_rel,
-        prod_rel,
-        subplan_rel
-    )
-    with open('/relationships/sub_rel.json', 'w') as file:
-        json.dump(sub_rel, file)
+    # SUBSCRIPTIONS
 
-# ORDERS
-if os.path.isfile('/relationships/job_rel.json'):
-    with open('/relationships/job_rel.json') as file:
-        job_rel = json.load(file)
-    job_rel = {int(k): int(v) for k, v in job_rel.items()}
-else:
-    job_rel = transfer_orders(
-        source,
-        destination,
-        contact_rel,
-        prod_rel,
-        cc_rel,
-        subplan_rel
-    )
-    with open('/relationships/job_rel.json', 'w') as file:
-        json.dump(job_rel, file)
+    if os.path.isfile('/relationships/sub_rel.json'):
+        with open('/relationships/sub_rel.json') as file:
+            sub_rel = json.load(file)
+        sub_rel = {int(k): int(v) for k, v in sub_rel.items()}
+    else:
+        sub_rel = transfer_subscriptions(
+            source,
+            destination,
+            contact_rel,
+            cc_rel,
+            prod_rel,
+            subplan_rel
+        )
+        with open('/relationships/sub_rel.json', 'w') as file:
+            json.dump(sub_rel, file)
 
-# jobtojobrecurring
-if os.path.isfile('/relationships/jtjr_rel.json'):
-    with open('/relationships/jtjr_rel.json') as file:
-        jtjr_rel = json.load(file)
-    jtjr_rel = {int(k): int(v) for k, v in jtjr_rel.items()}
-else:
-    jtjr_rel = transfer_jobtojobrecurring(
-        source,
-        destination,
-        job_rel,
-        sub_rel
-    )
-    with open('/relationships/jtjr_rel.json', 'w') as file:
-        json.dump(jtjr_rel, file)
+    # ORDERS
+    if os.path.isfile('/relationships/job_rel.json'):
+        with open('/relationships/job_rel.json') as file:
+            job_rel = json.load(file)
+        job_rel = {int(k): int(v) for k, v in job_rel.items()}
+    else:
+        job_rel = transfer_orders(
+            source,
+            destination,
+            contact_rel,
+            prod_rel,
+            cc_rel,
+            subplan_rel
+        )
+        with open('/relationships/job_rel.json', 'w') as file:
+            json.dump(job_rel, file)
 
-# set merchant account to USE_DEFAULT, Id 0
+    # jobtojobrecurring
+    if os.path.isfile('/relationships/jtjr_rel.json'):
+        with open('/relationships/jtjr_rel.json') as file:
+            jtjr_rel = json.load(file)
+        jtjr_rel = {int(k): int(v) for k, v in jtjr_rel.items()}
+    else:
+        jtjr_rel = transfer_jobtojobrecurring(
+            source,
+            destination,
+            job_rel,
+            sub_rel
+        )
+        with open('/relationships/jtjr_rel.json', 'w') as file:
+            json.dump(jtjr_rel, file)
 
-source.close()
-destination.close()
+    # set merchant account to USE_DEFAULT, Id 0
 
-# os.system('cls') if os.name == 'nt' else os.system('clear')
+    source.close()
+    destination.close()
 
-if dropdowns_modified:
-    print('IMPORTANT: Reload Frontend')
+    # os.system('cls') if os.name == 'nt' else os.system('clear')
+
+    if dropdowns_modified:
+        print('IMPORTANT: Reload Frontend')
