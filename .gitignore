@@ -2,3 +2,4 @@
 /.vscode
 /relationships
 Pipfile.lock
+testing.py
