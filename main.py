@@ -89,7 +89,7 @@ Skip Contacts? (Yn)"""
 
     # Make relationship directory if not exists
     package_dir = os.path.dirname(os.path.abspath(__file__))
-    rel_dir = package_dir + '/relationships'
+    rel_dir = package_dir + f'/relationships/{source_app}_to_{destination_app}'
     os.makedirs(rel_dir, exist_ok=True)
 
     # -------- #
