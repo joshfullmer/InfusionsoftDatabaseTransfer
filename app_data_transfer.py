@@ -409,30 +409,26 @@ def transfer_custom_fields(source, destination, contact_rel):
         header_matches
     )
 
+    fieldname_rel = {}
+    for row in matches.itertuples():
+        old_name = getattr(row, s_fieldname)
+        new_name = getattr(row, 'NewDatabaseName')
+        fieldname_rel[old_name] = new_name
+
     #####################
     # ADD Custom Fields #
     #####################
 
-    # Map header IDs
+    # Map fields
     missing_rows['GroupId'] = missing_rows['GroupId'].map(header_rel)
-
-    # Delete old database name
-    missing_fieldnames = missing_rows['FieldName'].tolist()
-    missing_rows.drop('FieldName', axis=1, inplace=True)
-
-    # Rename new database name column
-    missing_rows.rename({'NewDatabaseName': 'FieldName'}, axis=1, inplace=True)
+    missing_rows['FieldName'] = missing_rows['FieldName'].map(fieldname_rel)
 
     # Insert dataframe for custom fields
     if not missing_rows.empty:
         destination.insert_dataframe('DataFormField', missing_rows)
 
     # Add custom fields to Custom_Contact
-    fieldname_rel = {}
-    for row in matches.itertuples():
-        old_name = getattr(row, s_fieldname)
-        new_name = getattr(row, 'NewDatabaseName')
-        fieldname_rel[old_name] = new_name
+    missing_fieldnames = missing_rows['FieldName'].tolist()
     if missing_fieldnames:
         destination.alter_custom_field_table(
             field_creation,
