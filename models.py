@@ -27,6 +27,13 @@ class Database:
 
         return pd.DataFrame(data, columns=columns)
 
+    def get_count(self, tablename, where=''):
+        query = (f'SELECT COUNT(*) FROM {tablename} {where};')
+        self.cursor.execute(query)
+        data = self.cursor.fetchone()[0]
+
+        return data
+
     def get_column_names(self, tablename):
         query = (f"""
             SELECT `COLUMN_NAME`

@@ -97,6 +97,16 @@ Skip Contacts? (Yn)"""
     # -------- #
 
     if config['CONTACTS']:
+        start_count_contact = destination.get_count(
+            'Contact',
+            'WHERE IsUser=0 AND Id<>CompanyID'
+        )
+        start_count_tag = destination.get_count('ContactGroup')
+        start_count_leadsource = destination.get_count('LeadSource')
+        start_count_company = destination.get_count(
+            'Contact',
+            'WHERE Id=CompanyID'
+        )
         if os.path.isfile(rel_dir + '/contact_rel.json'):
             with open(rel_dir + '/contact_rel.json') as file:
                 contact_rel = json.load(file)
@@ -111,43 +121,68 @@ Skip Contacts? (Yn)"""
             )
             with open(rel_dir + '/contact_rel.json', 'w') as file:
                 json.dump(contact_rel, file)
-        print('Contacts Transferred.')
+        end_count_contact = destination.get_count(
+            'Contact',
+            'WHERE IsUser=0 AND Id<>CompanyID'
+        )
+        end_count_tag = destination.get_count('ContactGroup')
+        end_count_leadsource = destination.get_count('LeadSource')
+        end_count_company = destination.get_count(
+            'Contact',
+            'WHERE Id=CompanyID'
+        )
+        transfer_count_contact = end_count_contact - start_count_contact
+        transfer_count_tag = end_count_tag - start_count_tag
+        transfer_count_leadsource = (
+            end_count_leadsource - start_count_leadsource)
+        transfer_count_company = end_count_company - start_count_company
+        print(f'{transfer_count_contact} Contacts Transferred.')
         if config['TAGS']:
-            print('Tags Transferred.')
+            print(f'{transfer_count_tag} Tags Transferred.')
         if config['LEAD_SOURCES']:
-            print('Lead Sources Transferred.')
+            print(f'{transfer_count_leadsource} Lead Sources Transferred.')
         if config['COMPANIES']:
-            print('Companies Transferred.')
+            print(f'{transfer_count_company} Companies Transferred.')
 
     # ---------------- #
     # TAG APPLICATIONS #
     # ---------------- #
 
     if config['TAGS']:
+        start_count = destination.get_count('ContactGroupAssign')
         adt.transfer_tag_applications(source, destination, contact_rel)
-        print('Tag Applications Transferred.')
+        end_count = destination.get_count('ContactGroupAssign')
+        transfer_count = end_count - start_count
+        print(f'{transfer_count} Tag Applications Transferred.')
 
     # -------- #
     # PRODUCTS #
     # -------- #
 
     if config['PRODUCTS']:
+        start_count = destination.get_count('Product')
         prod_rel, subplan_rel = adt.transfer_products(source, destination)
-        print('Products Transferred.')
+        end_count = destination.get_count('Product')
+        transfer_count = end_count - start_count
+        print(f'{transfer_count} Products Transferred.')
 
     # ------------- #
     # CUSTOM FIELDS #
     # ------------- #
 
     if config['CONTACT_CFS']:
+        start_count = destination.get_count('DataFormField')
         adt.transfer_custom_fields(source, destination, contact_rel)
-        print('Custom Fields Transferred.')
+        end_count = destination.get_count('DataFormField')
+        transfer_count = end_count - start_count
+        print(f'{transfer_count} Custom Fields Transferred.')
 
     # --------------- #
     # CONTACT ACTIONS #
     # --------------- #
 
     if config['CONTACT_ACTIONS']:
+        start_count = destination.get_count('ContactAction')
         if os.path.isfile(rel_dir + '/action_rel.json'):
             with open(rel_dir + '/action_rel.json') as file:
                 action_rel = json.load(file)
@@ -157,13 +192,16 @@ Skip Contacts? (Yn)"""
                 source, destination, contact_rel)
             with open(rel_dir + '/action_rel.json', 'w') as file:
                 json.dump(action_rel, file)
-        print('Contact Actions Transferred.')
+        end_count = destination.get_count('ContactAction')
+        transfer_count = end_count - start_count
+        print(f'{transfer_count} Contact Actions Transferred.')
 
     # ------------- #
     # OPPORTUNITIES #
     # ------------- #
 
     if config['OPPORTUNITIES']:
+        start_count = destination.get_count('Opportunity')
         if os.path.isfile(rel_dir + '/opp_rel.json'):
             with open(rel_dir + '/opp_rel.json') as file:
                 opp_rel = json.load(file)
@@ -178,13 +216,16 @@ Skip Contacts? (Yn)"""
             )
             with open(rel_dir + '/opp_rel.json', 'w') as file:
                 json.dump(opp_rel, file)
-        print('Opportunities Transferred.')
+        end_count = destination.get_count('Opportunity')
+        transfer_count = end_count - start_count
+        print(f'{transfer_count} Opportunities Transferred.')
 
     # ------------ #
     # CREDIT CARDS #
     # ------------ #
 
     if config['CREDIT_CARDS']:
+        start_count = destination.get_count('CreditCard')
         if os.path.isfile(rel_dir + '/cc_rel.json'):
             with open(rel_dir + '/cc_rel.json') as file:
                 cc_rel = json.load(file)
@@ -197,14 +238,17 @@ Skip Contacts? (Yn)"""
             )
             with open(rel_dir + '/cc_rel.json', 'w') as file:
                 json.dump(cc_rel, file)
+        end_count = destination.get_count('CreditCard')
+        transfer_count = end_count - start_count
         cc_rel[0] = 0
-        print('Credit Cards Transferred.')
+        print(f'{transfer_count} Credit Cards Transferred.')
 
     # ------------- #
     # SUBSCRIPTIONS #
     # ------------- #
 
     if config['SUBSCRIPTIONS']:
+        start_count = destination.get_count('JobRecurring')
         if os.path.isfile(rel_dir + '/sub_rel.json'):
             with open(rel_dir + '/sub_rel.json') as file:
                 sub_rel = json.load(file)
@@ -220,13 +264,16 @@ Skip Contacts? (Yn)"""
             )
             with open(rel_dir + '/sub_rel.json', 'w') as file:
                 json.dump(sub_rel, file)
-        print('Subscriptions Transferred.')
+        end_count = destination.get_count('JobRecurring')
+        transfer_count = end_count - start_count
+        print(f'{transfer_count} Subscriptions Transferred.')
 
     # ------ #
     # ORDERS #
     # ------ #
 
     if config['ORDERS']:
+        start_count = destination.get_count('Job')
         if os.path.isfile(rel_dir + '/job_rel.json'):
             with open(rel_dir + '/job_rel.json') as file:
                 job_rel = json.load(file)
@@ -242,7 +289,9 @@ Skip Contacts? (Yn)"""
             )
             with open(rel_dir + '/job_rel.json', 'w') as file:
                 json.dump(job_rel, file)
-        print('Orders Transferred.')
+        end_count = destination.get_count('Job')
+        transfer_count = end_count - start_count
+        print(f'{transfer_count} Orders Transferred.')
 
     # ----------------- #
     # JOBTOJOBRECURRING #
