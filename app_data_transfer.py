@@ -530,7 +530,7 @@ def apply_transfer_tag(source, destination, contact_rel):
     # Get auto increment and generate list of ids based on that
     offset = 10
     tran_tag_id = destination.get_auto_increment('ContactGroup') + offset
-    tran_tag = f'transferred from {source.appname} to {destination.appname}'
+    tran_tag = f'Data Transferred - {source.appname} > {destination.appname}'
     now = dt.datetime.now()
     tran_date_created = now.strftime('%Y-%m-%d %H:%M:%S')
     tran_dict = {
