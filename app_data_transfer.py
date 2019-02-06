@@ -203,7 +203,7 @@ def get_user_relationship(source, destination):
     return user_rel
 
 
-def transfer_contacts(source, destination):
+def transfer_contacts(source, destination, t_tags, t_ls, t_comp):
     """
     Transfers all contacts and companies to destination app
 
@@ -214,8 +214,12 @@ def transfer_contacts(source, destination):
 
     contacts = source.get_table('Contact')
 
-    # Filter contacts to remove user records
-    contacts = contacts[contacts.IsUser == 0]
+    if t_comp:
+        contacts = contacts[contacts.isUser == 0
+                            & contacts.Id != contacts.CompanyID]
+    else:
+        # Filter contacts to remove user records
+        contacts = contacts[contacts.IsUser == 0]
 
     # Create new IDs and ID relationship
     old_ids = contacts['Id'].tolist()
@@ -234,21 +238,25 @@ def transfer_contacts(source, destination):
     # Get user relationship dictionary
     user_rel = get_user_relationship(source, destination)
 
-    # Get lead source relationship dictionary
-    ls_rel = transfer_lead_sources(source, destination)
+    # Transfer Lead Sources
+    if t_ls:
+        # Get lead source relationship dictionary
+        ls_rel = transfer_lead_sources(source, destination)
 
-    # Get tag relationship dictionary
-    tag_rel = transfer_tags(source, destination)
+    # Transfer Tags
+    if t_tags:
+        # Get tag relationship dictionary
+        tag_rel = transfer_tags(source, destination)
 
-    # Convert Groups field using tag relationship dictionary
-    new_groups = []
-    for groups in contacts['Groups'].tolist():
-        if groups:
-            group_ids = [str(tag_rel[int(x)]) for x in groups.split(',')]
-            new_groups.append(','.join(group_ids))
-        else:
-            new_groups.append(groups)
-    contacts['Groups'] = new_groups
+        # Convert Groups field using tag relationship dictionary
+        new_groups = []
+        for groups in contacts['Groups'].tolist():
+            if groups:
+                group_ids = [str(tag_rel[int(x)]) for x in groups.split(',')]
+                new_groups.append(','.join(group_ids))
+            else:
+                new_groups.append(groups)
+        contacts['Groups'] = new_groups
 
     # Field reassignments from generated relationship dictionaries
     contacts['Id'] = contacts['Id'].map(contact_rel)
@@ -256,20 +264,27 @@ def transfer_contacts(source, destination):
     contacts['CreatedBy'] = contacts['CreatedBy'].map(user_rel)
     contacts['LastUpdatedBy'] = contacts['LastUpdatedBy'].map(user_rel)
     contacts['OwnerID'] = contacts['OwnerID'].map(user_rel)
-    contacts['LeadSourceId'] = contacts['LeadSourceId'].map(ls_rel)
+    if t_ls:
+        contacts['LeadSourceId'] = contacts['LeadSourceId'].map(ls_rel)
+    else:
+        contacts['LeadSourceId'] = 0
 
     # Transfer contact records
     destination.insert_dataframe('Contact', contacts)
 
-    # Transfer primary contact for companies
-    companies = source.get_table('Company')
+    # Transfer companies
+    if t_comp:
+        # Transfer primary contact for companies
+        companies = source.get_table('Company')
 
-    # Field reassignments
-    companies['Id'] = companies['Id'].map(contact_rel)
-    companies['MainContactId'] = companies['MainContactId'].map(contact_rel)
+        # Field reassignments
+        companies['Id'] = companies['Id'].map(contact_rel)
+        companies['MainContactId'] = companies['MainContactId'].map(
+            contact_rel
+        )
 
-    # Transfer company records
-    destination.insert_dataframe('Company', companies)
+        # Transfer company records
+        destination.insert_dataframe('Company', companies)
 
     # Apply Tag to Transferred Contacts
     apply_transfer_tag(source, destination, contact_rel)
@@ -1353,10 +1368,11 @@ if __name__ == '__main__':
             contact_rel = json.load(file)
         contact_rel = {int(k): int(v) for k, v in contact_rel.items()}
     else:
-        contact_rel = transfer_contacts(source, destination)
+        contact_rel = transfer_contacts(source, destination, True, True, True)
         with open('/relationships/contact_rel.json', 'w') as file:
             json.dump(contact_rel, file)
-        transfer_custom_fields(source, destination, contact_rel)
+
+    transfer_custom_fields(source, destination, contact_rel)
 
     transfer_tag_applications(source, destination, contact_rel)
 
@@ -1458,12 +1474,8 @@ if __name__ == '__main__':
         with open('/relationships/jtjr_rel.json', 'w') as file:
             json.dump(jtjr_rel, file)
 
-    # set merchant account to USE_DEFAULT, Id 0
-
     source.close()
     destination.close()
-
-    # os.system('cls') if os.name == 'nt' else os.system('clear')
 
     if dropdowns_modified:
         print('IMPORTANT: Reload Frontend')
