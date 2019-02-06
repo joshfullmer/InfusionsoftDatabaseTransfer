@@ -151,22 +151,18 @@ class Database:
         increment_end = (2 * len(old_ids)) + increment_start
         new_ids = [i for i in range(increment_start, increment_end, 2)]
         cc_rel = dict(zip(old_ids, new_ids))
-        cc_rel_df = pd.DataFrame(
-            list(cc_rel.items()),
-            columns=[s_id, d_id],
-        )
 
         # Credit Card Relationship Table
-        create_contact_rel_table = (f"""
+        create_cc_rel_table = (f"""
             CREATE TABLE IF NOT EXISTS `{cc_rel_table}` (
                 `{s_id}` int(10) NOT NULL,
                 `{d_id}` int(10) NOT NULL
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
         """)
 
-        self.cursor.execute(create_contact_rel_table)
-        contact_rel_df = pd.DataFrame(
-            list(contact_rel.items()),
+        self.cursor.execute(create_cc_rel_table)
+        cc_rel_df = pd.DataFrame(
+            list(cc_rel.items()),
             columns=[s_id, d_id]
         )
         self.insert_dataframe(cc_rel_table, cc_rel_df)
