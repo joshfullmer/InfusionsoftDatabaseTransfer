@@ -314,6 +314,8 @@ def transfer_custom_fields(source, destination, contact_rel):
 
     s_custom_fields = source.get_table('DataFormField')
     s_contact_cfs = s_custom_fields[s_custom_fields['FormId'] == -1].copy()
+    if not len(s_contact_cfs.index):
+        return None
     d_custom_fields = destination.get_table('DataFormField')
     d_contact_cfs = d_custom_fields[d_custom_fields['FormId'] == -1].copy()
 
