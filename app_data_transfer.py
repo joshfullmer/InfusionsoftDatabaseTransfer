@@ -215,8 +215,8 @@ def transfer_contacts(source, destination, t_tags, t_ls, t_comp):
     contacts = source.get_table('Contact')
 
     if t_comp:
-        contacts = contacts[contacts.isUser == 0
-                            & contacts.Id != contacts.CompanyID]
+        contacts = contacts.loc[contacts.IsUser == 0
+                                & ~(contacts.Id != contacts.CompanyID)]
     else:
         # Filter contacts to remove user records
         contacts = contacts[contacts.IsUser == 0]
