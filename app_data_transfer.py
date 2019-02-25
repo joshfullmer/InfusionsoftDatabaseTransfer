@@ -71,10 +71,22 @@ def transfer_lead_sources(source, destination):
     return ls_rel
 
 
-def transfer_tags(source, destination):
-    # Get matching tag categories
+def transfer_tags(source, destination, tag_ids=[]):
+    # Get tags to transfer, then filter by provided tag IDs list.
+    s_tags = source.get_table('ContactGroup')
+    d_tags = destination.get_table('ContactGroup')
+
+    if tag_ids:
+        s_tags = s_tags[s_tags['Id'].isin(tag_ids)].copy()
+        cats_to_transfer = list(s_tags['GroupCategoryId'].unique())
+
+    # Get matching tag categories, then filter only those used by the tags
+    # to transfer
     s_tc = source.get_table('ContactGroupCategory')
     d_tc = destination.get_table('ContactGroupCategory')
+
+    if tag_ids:
+        s_tc = s_tc[s_tc['Id'].isin(cats_to_transfer)].copy()
 
     # Generate labels for Id matching
     s_id = f'Id_{source.appname}'
@@ -101,8 +113,6 @@ def transfer_tags(source, destination):
     tc_rel[0] = 0
 
     # Transfer tags
-    s_tags = source.get_table('ContactGroup')
-    d_tags = destination.get_table('ContactGroup')
 
     # Getting list of matches
     tag_matches = pd.merge(
@@ -203,7 +213,7 @@ def get_user_relationship(source, destination):
     return user_rel
 
 
-def transfer_contacts(source, destination, t_tags, t_ls, t_comp):
+def transfer_contacts(source, destination, t_tags, t_ls, t_comp, tag_ids=[]):
     """
     Transfers all contacts and companies to destination app
 
@@ -246,13 +256,17 @@ def transfer_contacts(source, destination, t_tags, t_ls, t_comp):
     # Transfer Tags
     if t_tags:
         # Get tag relationship dictionary
-        tag_rel = transfer_tags(source, destination)
+        tag_rel = transfer_tags(source, destination, tag_ids)
+        print(tag_rel)
 
         # Convert Groups field using tag relationship dictionary
         new_groups = []
         for groups in contacts['Groups'].tolist():
             if groups:
-                group_ids = [str(tag_rel[int(x)]) for x in groups.split(',')]
+                group_ids = [str(tag_rel[int(x)])
+                             for x in groups.split(',')
+                             if int(x) in tag_rel.keys()]
+
                 new_groups.append(','.join(group_ids))
             else:
                 new_groups.append(groups)
@@ -474,13 +488,16 @@ def transfer_custom_fields(source, destination, contact_rel):
     return matches
 
 
-def transfer_tag_applications(source, destination, contact_rel):
+def transfer_tag_applications(source, destination, contact_rel, tag_ids=[]):
     """
     Transfers the tags which are applied to contacts.
     """
 
     s_tag_apps = source.get_table('ContactGroupAssign')
     d_tag_apps = destination.get_table('ContactGroupAssign')
+
+    if tag_ids:
+        s_tag_apps = s_tag_apps[s_tag_apps['GroupId'].isin(tag_ids)]
 
     # Get list of existing apps into one object each
     existing_tag_apps = []
@@ -492,7 +509,7 @@ def transfer_tag_applications(source, destination, contact_rel):
         existing_tag_apps.append(f'{int(old_contact_id)},{old_tag_id}')
 
     # Get tag relationship for mapping
-    tag_rel = transfer_tags(source, destination)
+    tag_rel = transfer_tags(source, destination, tag_ids)
 
     # Map relationships to generate new values
     s_tag_apps = s_tag_apps.drop(columns='Id')

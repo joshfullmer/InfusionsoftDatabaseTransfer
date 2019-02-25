@@ -3,3 +3,4 @@
 /relationships
 Pipfile.lock
 testing.py
+.DS_Store
