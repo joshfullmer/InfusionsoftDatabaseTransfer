@@ -59,7 +59,6 @@ Skip Contacts? (Yn)"""
 Transfer all tags (hit enter) or just a subset (comma separated list)?""")
     if tag_ids:
         config['TAG_IDS'] = [int(x) for x in tag_ids.split(',')]
-        print(config['TAG_IDS'])
     config['LEAD_SOURCES'] = input('Lead Sources? (Yn) ').lower() != 'n'
     config['COMPANIES'] = input('Companies? (Yn) ').lower() != 'n'
     config['PRODUCTS'] = input('Products? (Yn) ').lower() != 'n'

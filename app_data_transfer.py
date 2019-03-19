@@ -257,7 +257,6 @@ def transfer_contacts(source, destination, t_tags, t_ls, t_comp, tag_ids=[]):
     if t_tags:
         # Get tag relationship dictionary
         tag_rel = transfer_tags(source, destination, tag_ids)
-        print(tag_rel)
 
         # Convert Groups field using tag relationship dictionary
         new_groups = []
@@ -265,7 +264,8 @@ def transfer_contacts(source, destination, t_tags, t_ls, t_comp, tag_ids=[]):
             if groups:
                 group_ids = [str(tag_rel[int(x)])
                              for x in groups.split(',')
-                             if int(x) in tag_rel.keys()]
+                             if x.isdigit() and
+                             int(x) in tag_rel.keys()]
 
                 new_groups.append(','.join(group_ids))
             else:
@@ -535,6 +535,9 @@ def transfer_tag_applications(source, destination, contact_rel, tag_ids=[]):
 
     # Remove Exists? column
     tag_apps_to_import = tag_apps_to_import.drop(columns='Exists?')
+
+    # Remove duplicates that may have appeared
+    tag_apps_to_import.drop_duplicates(['ContactId', 'GroupId'], inplace=True)
 
     # Add tag applications
     if not tag_apps_to_import.empty:

@@ -92,30 +92,34 @@ class Database:
         quoted_columns = [f'`{column}`' for column in list(dataframe)]
         column_names = ','.join(quoted_columns)
 
-        rows = [tuple(x) for x in dataframe.values]
-        row_strings = []
-        for row in rows:
-            row_values = []
-            for cell in row:
-                if isinstance(cell, int):
-                    row_values.append(str(cell))
-                elif cell is None or pd.isnull(cell):
-                    row_values.append('NULL')
-                else:
-                    string = re.sub(r'"', '\\"', str(cell))
-                    row_values.append('"' + string + '"')
-            row_string = '(' + ','.join(row_values) + ')'
-            row_strings.append(row_string)
-        values = ',\n'.join(row_strings)
+        n = 10000
+        df_list = [dataframe[i:i+n] for i in range(0, dataframe.shape[0], n)]
 
-        query = (f"""
-            INSERT INTO {tablename}
-                ({column_names})
-            VALUES
-                {values};
-        """)
-        self.cursor.execute(query)
-        self.connection.commit()
+        for df in df_list:
+            rows = [tuple(x) for x in df.values]
+            row_strings = []
+            for row in rows:
+                row_values = []
+                for cell in row:
+                    if isinstance(cell, int):
+                        row_values.append(str(cell))
+                    elif cell is None or pd.isnull(cell):
+                        row_values.append('NULL')
+                    else:
+                        string = re.sub(r'"', '\\"', str(cell))
+                        row_values.append('"' + string + '"')
+                row_string = '(' + ','.join(row_values) + ')'
+                row_strings.append(row_string)
+            values = ',\n'.join(row_strings)
+
+            query = (f"""
+                INSERT INTO {tablename}
+                    ({column_names})
+                VALUES
+                    {values};
+            """)
+            self.cursor.execute(query)
+            self.connection.commit()
 
     def update_app_setting(self, setting, value):
         query = (f"""
