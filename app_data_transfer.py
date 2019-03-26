@@ -3,6 +3,7 @@ import os
 import pandas as pd
 import re
 import datetime as dt
+from pprint import pprint
 
 from models import Database
 
@@ -333,6 +334,10 @@ def transfer_custom_fields(source, destination, contact_rel):
     d_custom_fields = destination.get_table('DataFormField')
     d_contact_cfs = d_custom_fields[d_custom_fields['FormId'] == -1].copy()
 
+    # Get list of drilldown custom fieldnames
+    drilldowns = s_custom_fields[s_custom_fields['DataType'] == 23]
+    drilldown_names = drilldowns['FieldName'].tolist()
+
     # Generate matches on Label and Type
     s_fieldname = f'FieldName_{source.appname}'
     items = [
@@ -462,10 +467,15 @@ def transfer_custom_fields(source, destination, contact_rel):
         inplace=True,
     )
     cf_rel = {}
+    cf_id_rel = {}
     for row in matches.itertuples():
         old_fieldname = getattr(row, s_fieldname)
         new_fieldname = getattr(row, d_fieldname)
         cf_rel[old_fieldname] = new_fieldname
+        old_id = getattr(row, s_id)
+        new_id = getattr(row, d_id)
+        cf_id_rel[old_id] = new_id
+    pprint(cf_id_rel)
 
     #########################
     # ADD Custom Field Data #
@@ -474,6 +484,38 @@ def transfer_custom_fields(source, destination, contact_rel):
     s_fieldnames.append('Id')
 
     cf_data = source.get_table('Custom_Contact').filter(items=s_fieldnames)
+
+    # Manage drilldowns
+    if drilldown_names:
+        for name in drilldown_names:
+            cf_data[name] = cf_data[name].astype(object)
+            cf_data[name] = cf_data[name].fillna('')
+            cf_data[name] = cf_data[name].str.replace(r'\.0', '', regex=True)
+        drilldown_option = source.get_table('DrilldownOption')
+
+        # Get new Ids
+        offset = 50
+        increment_start = (destination.get_auto_increment('DrilldownOption') +
+                           offset)
+        increment_end = (2 * len(missing_rows)) + increment_start
+        new_ids = [i for i in range(increment_start, increment_end, 2)]
+        ddo_rel = dict(zip(drilldown_option['Id'].tolist(), new_ids))
+        ddo_rel[-1] = -1
+        ddo_rel[0] = 0
+
+        # Map new Ids
+        drilldown_option['Id'] = drilldown_option['Id'].map(ddo_rel)
+        drilldown_option['CategoryId'] = drilldown_option['CategoryId'].map(
+            ddo_rel
+        )
+        drilldown_option['FieldId'] = drilldown_option['FieldId'].map(
+            cf_id_rel
+        )
+        print(drilldown_option)
+
+        # Add rows
+        destination.insert_dataframe('DrilldownOption', drilldown_option)
+
     cf_data.rename(fieldname_rel, axis=1, inplace=True)
     d_db_names = destination.get_column_names('Custom_Contact')
     cf_data['Id'] = cf_data['Id'].map(contact_rel)

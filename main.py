@@ -69,9 +69,10 @@ Transfer all tags (hit enter) or just a subset (comma separated list)?""")
             'Contact Actions? (Yn) ').lower() != 'n'
         config['OPPORTUNITIES'] = input('Opportunities? (Yn) ').lower() != 'n'
         config['CREDIT_CARDS'] = input('Credit Cards? (Yn) ').lower() != 'n'
+    if config['CONTACTS'] and config['PRODUCTS']:
+        config['ORDERS'] = input('Orders? (Yn) ').lower() != 'n'
     if config['CONTACTS'] and config['PRODUCTS'] and config['CREDIT_CARDS']:
         config['SUBSCRIPTIONS'] = input('Subscriptions? (Yn) ').lower() != 'n'
-        config['ORDERS'] = input('Orders? (Yn) ').lower() != 'n'
 
     #######################
     # BEGIN DATA TRANSFER #
