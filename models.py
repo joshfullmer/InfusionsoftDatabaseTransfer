@@ -106,7 +106,7 @@ class Database:
                     elif cell is None or pd.isnull(cell):
                         row_values.append('NULL')
                     else:
-                        string = re.sub(r'"', '\\"', str(cell))
+                        string = re.escape(str(cell))
                         row_values.append('"' + string + '"')
                 row_string = '(' + ','.join(row_values) + ')'
                 row_strings.append(row_string)
