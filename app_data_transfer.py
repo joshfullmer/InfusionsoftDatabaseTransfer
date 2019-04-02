@@ -335,7 +335,7 @@ def transfer_custom_fields(source, destination, contact_rel):
     d_contact_cfs = d_custom_fields[d_custom_fields['FormId'] == -1].copy()
 
     # Get list of drilldown custom fieldnames
-    drilldowns = s_custom_fields[s_custom_fields['DataType'] == 23]
+    drilldowns = s_custom_fields[(s_custom_fields['DataType'] == 23) & (s_custom_fields['FormId'] == -1)]
     drilldown_names = drilldowns['FieldName'].tolist()
 
     # Generate matches on Label and Type
