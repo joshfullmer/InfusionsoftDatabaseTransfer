@@ -88,7 +88,7 @@ class Database:
         self.cursor.execute(query)
         self.connection.commit()
 
-    def insert_dataframe(self, tablename, dataframe):
+    def insert_dataframe(self, tablename, dataframe, replace=False):
         quoted_columns = [f'`{column}`' for column in list(dataframe)]
         column_names = ','.join(quoted_columns)
 
@@ -112,8 +112,13 @@ class Database:
                 row_strings.append(row_string)
             values = ',\n'.join(row_strings)
 
+            if replace:
+                insert = 'REPLACE'
+            else:
+                insert = 'INSERT'
+
             query = (f"""
-                INSERT INTO {tablename}
+                {insert} INTO {tablename}
                     ({column_names})
                 VALUES
                     {values};
