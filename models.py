@@ -107,6 +107,7 @@ class Database:
                         row_values.append('NULL')
                     else:
                         string = re.escape(str(cell))
+                        string = re.sub(r'"', r'\"', string)
                         row_values.append('"' + string + '"')
                 row_string = '(' + ','.join(row_values) + ')'
                 row_strings.append(row_string)
