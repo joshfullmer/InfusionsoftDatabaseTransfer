@@ -47,7 +47,18 @@ Yes is the default selection.  Press anything besides 'n' to say yes.
     """)
     config = defaultdict(bool)
     config['CONTACTS'] = input('Contacts? (Yn) ').lower() != 'n'
-    if not config['CONTACTS']:
+    if config['CONTACTS']:
+        while True:
+            tag_id = input("""
+Only import contacts who have a specific tag (ID)? (leave blank for all)  """)
+            if tag_id:
+                try:
+                    config['CONTACTS_WITH_TAG_ID'] = int(tag_id)
+                except ValueError:
+                    print('\nPlease provide Tag ID only')
+                    continue
+            break
+    else:
         config['CONTACTS'] = input("""
 The following things rely on the Contact table:
 Custom Fields, Contact Actions, Opportunities, Credit Cards, Subscriptions,
@@ -55,10 +66,11 @@ and Orders
 Skip Contacts? (Yn)"""
                                    ).lower() == 'n'
     config['TAGS'] = input('Tags? (Yn) ').lower() != 'n'
-    tag_ids = input("""
+    if config['TAGS']:
+        tag_ids = input("""
 Transfer all tags (hit enter) or just a subset (comma separated list)?""")
-    if tag_ids:
-        config['TAG_IDS'] = [int(x) for x in tag_ids.split(',')]
+        if tag_ids:
+            config['TAG_IDS'] = [int(x) for x in tag_ids.split(',')]
     config['LEAD_SOURCES'] = input('Lead Sources? (Yn) ').lower() != 'n'
     config['COMPANIES'] = input('Companies? (Yn) ').lower() != 'n'
     config['PRODUCTS'] = input('Products? (Yn) ').lower() != 'n'
@@ -123,6 +135,7 @@ Transfer all tags (hit enter) or just a subset (comma separated list)?""")
                 config['TAGS'],
                 config['LEAD_SOURCES'],
                 config['COMPANIES'],
+                config.get('CONTACTS_WITH_TAG_ID'),
                 config.get('TAG_IDS', [])
             )
             with open(rel_dir + '/contact_rel.json', 'w') as file:
@@ -302,6 +315,8 @@ Transfer all tags (hit enter) or just a subset (comma separated list)?""")
                 job_rel = json.load(file)
             job_rel = {int(k): int(v) for k, v in job_rel.items()}
         else:
+            if not config['CREDIT_CARDS']:
+                cc_rel = {}
             job_rel = adt.transfer_orders(
                 source,
                 destination,

@@ -214,7 +214,14 @@ def get_user_relationship(source, destination):
     return user_rel
 
 
-def transfer_contacts(source, destination, t_tags, t_ls, t_comp, tag_ids=[]):
+def transfer_contacts(
+        source,
+        destination,
+        t_tags,
+        t_ls,
+        t_comp,
+        contacts_with_tag_id=None,
+        tag_ids=[]):
     """
     Transfers all contacts and companies to destination app
 
@@ -225,12 +232,19 @@ def transfer_contacts(source, destination, t_tags, t_ls, t_comp, tag_ids=[]):
 
     contacts = source.get_table('Contact')
 
+    # Filter contacts to import
     if t_comp:
         contacts = contacts.loc[contacts.IsUser == 0
                                 & ~(contacts.Id != contacts.CompanyID)]
     else:
         # Filter contacts to remove user records
         contacts = contacts[contacts.IsUser == 0]
+
+    if contacts_with_tag_id:
+        tag_apps = source.get_table('ContactGroupAssign')
+        f_tag_apps = tag_apps[tag_apps['GroupId'] == contacts_with_tag_id]
+        contact_ids_to_keep = f_tag_apps['ContactId'].tolist()
+        contacts = contacts[contacts['Id'].isin(contact_ids_to_keep)]
 
     # Create new IDs and ID relationship
     old_ids = contacts['Id'].tolist()
@@ -291,6 +305,10 @@ def transfer_contacts(source, destination, t_tags, t_ls, t_comp, tag_ids=[]):
     if t_comp:
         # Transfer primary contact for companies
         companies = source.get_table('Company')
+
+        # Filter out items not in contact_rel
+        companies = companies[companies['MainContactId'].isin(
+                              list(contact_rel.keys()))]
 
         # Field reassignments
         companies['Id'] = companies['Id'].map(contact_rel)
@@ -547,7 +565,10 @@ def transfer_custom_fields(source, destination, contact_rel):
             destination.insert_dataframe('DrilldownOption', dds_to_import)
 
     cf_data.rename(fieldname_rel, axis=1, inplace=True)
-    d_db_names = destination.get_column_names('Custom_Contact')
+
+    # Filter out contacts not in contact_rel
+    cf_data = cf_data[cf_data['Id'].isin(list(contact_rel.keys()))]
+
     cf_data['Id'] = cf_data['Id'].map(contact_rel)
     cf_data_to_import = cf_data[cf_data['Id'].notnull()].copy()
     cf_data_to_import['Id'] = cf_data_to_import['Id'].astype(int)
@@ -586,6 +607,10 @@ def transfer_tag_applications(source, destination, contact_rel, tag_ids=[]):
 
     # Get tag relationship for mapping
     tag_rel = transfer_tags(source, destination, tag_ids)
+
+    # Filter out contacts not in contact_rel
+    s_tag_apps = s_tag_apps[s_tag_apps['ContactId'].isin(
+                            list(contact_rel.keys()))]
 
     # Map relationships to generate new values
     s_tag_apps = s_tag_apps.drop(columns='Id')
@@ -659,6 +684,9 @@ def transfer_contact_actions(source, destination, contact_rel):
     actions = source.get_table('ContactAction')
 
     user_rel = get_user_relationship(source, destination)
+
+    # Filter out contacts not in contact_rel
+    actions = actions[actions['Id'].isin(list(contact_rel.keys()))]
 
     # Relationship mapping
     actions['ContactId'] = actions['ContactId'].map(contact_rel)
@@ -868,6 +896,9 @@ def transfer_opportunities(
     destination.update_app_setting('stagewin', new_won_stage_id)
     destination.update_app_setting('stageloss', new_loss_stage_id)
 
+    # Filter out contacts not in contact_rel
+    opps = opps[opps['ContactID'].isin(list(contact_rel.keys()))]
+
     # Field mapping
 
     user_rel = get_user_relationship(source, destination)
@@ -947,6 +978,9 @@ def transfer_subscriptions(
 ):
 
     subs = source.get_table('JobRecurring')
+
+    # Filter out contacts not in contact_rel
+    subs = subs[subs['ContactId'].isin(list(contact_rel.keys()))]
 
     # ID mapping
     subs['ContactId'] = subs['ContactId'].map(contact_rel)
@@ -1235,6 +1269,9 @@ def transfer_orders(
     # JOB TABLE TRANSFORM #
     #######################
 
+    # Filter out contacts not in contact_rel
+    s_jobs = s_jobs[s_jobs['ContactId'].isin(list(contact_rel.keys()))]
+
     s_jobs['ContactId'] = s_jobs['ContactId'].map(contact_rel)
     s_jobs['CreatedBy'] = s_jobs['CreatedBy'].map(user_rel)
     s_jobs['LastUpdatedBy'] = s_jobs['LastUpdatedBy'].map(user_rel)
@@ -1255,6 +1292,11 @@ def transfer_orders(
     ###########################
     # INVOICE TABLE TRANSFORM #
     ###########################
+
+    # Filter out contacts not in contact_rel
+    s_invoices = s_invoices[s_invoices['ContactId'].isin(
+                            list(contact_rel.keys()))]
+    s_invoices = s_invoices[s_invoices['JobId'].isin(s_jobs['Id'].tolist())]
 
     # Convert ProductSold field using product relationship dictionary
     new_products = []
@@ -1281,8 +1323,16 @@ def transfer_orders(
     # PAYPLAN TABLE TRANSFORM #
     ###########################
 
+    # Filter out invoices not created above
+    s_payplans = s_payplans[
+        s_payplans['InvoiceId'].isin(s_invoices['Id'].tolist())
+    ]
+
     s_payplans['InvoiceId'] = s_payplans['InvoiceId'].map(invoice_rel)
-    s_payplans['CC1'] = s_payplans['CC1'].map(cc_rel)
+    if cc_rel:
+        s_payplans['CC1'] = s_payplans['CC1'].map(cc_rel)
+    else:
+        s_payplans['CC1'] = 0
     s_payplans['CC2'] = 0
     s_payplans['MerchantAccountId'] = 0
     s_payplans['PaymentGatewayId'] = 0
@@ -1292,6 +1342,17 @@ def transfer_orders(
     ###############################
     # INVOICEITEM TABLE TRANSFORM #
     ###############################
+
+    # Filter out items skipped above
+    s_invoiceitems = s_invoiceitems[
+        s_invoiceitems['ContactId'].isin(list(contact_rel.keys()))
+    ]
+    s_invoiceitems = s_invoiceitems[
+        s_invoiceitems['InvoiceId'].isin(s_invoices['Id'].tolist())
+    ]
+    s_invoiceitems = s_invoiceitems[
+        s_invoiceitems['JobId'].isin(s_jobs['Id'].tolist())
+    ]
 
     s_invoiceitems['InvoiceId'] = s_invoiceitems['InvoiceId'].map(invoice_rel)
     s_invoiceitems['JobId'] = s_invoiceitems['JobId'].map(job_rel)
@@ -1306,6 +1367,11 @@ def transfer_orders(
     # ORDERITEM TABLE TRANSFORM #
     #############################
 
+    # Filter out items not created above
+    s_orderitems = s_orderitems[
+        s_orderitems['OrderId'].isin(s_jobs['Id'].tolist())
+    ]
+
     s_orderitems['OrderId'] = s_orderitems['OrderId'].map(job_rel)
     s_orderitems['ProductId'] = s_orderitems['ProductId'].map(prod_rel)
     s_orderitems['DiscountedOrderItemId'] = 0
@@ -1316,20 +1382,17 @@ def transfer_orders(
     s_orderitems['SourceOrderItemId'] = s_orderitems['SourceOrderItemId'].map(
         orderitem_rel)
 
-    ##################################
-    # INVOICEPAYMENT TABLE TRANSFORM #
-    ##################################
-
-    s_invoicepayments['InvoiceId'] = s_invoicepayments['InvoiceId'].map(
-        invoice_rel)
-    s_invoicepayments['PaymentId'] = s_invoicepayments['PaymentId'].map(
-        payment_rel)
-    s_invoicepayments['RefundInvoicePaymentId'] = s_invoicepayments.get(
-        'RefundInvoicePaymentId').map(invoicepayment_rel)
-
     ###########################
     # PAYMENT TABLE TRANSFORM #
     ###########################
+
+    # Filter out items skipped above
+    s_payments = s_payments[
+        s_payments['ContactId'].isin(list(contact_rel.keys()))
+    ]
+    s_payments = s_payments[
+        s_payments['InvoiceId'].isin(s_invoices['Id'].tolist())
+    ]
 
     s_payments['UserId'] = s_payments['UserId'].map(user_rel)
     s_payments['ContactId'] = s_payments['ContactId'].map(contact_rel)
@@ -1341,9 +1404,33 @@ def transfer_orders(
     s_payments['PaymentGatewayId'] = 0
     s_payments['RefundId'] = s_payments['RefundId'].map(payment_rel)
 
+    ##################################
+    # INVOICEPAYMENT TABLE TRANSFORM #
+    ##################################
+
+    # Filter out items skipped above
+    s_invoicepayments = s_invoicepayments[
+        s_invoicepayments['InvoiceId'].isin(s_invoices['Id'].tolist())
+    ]
+    s_invoicepayments = s_invoicepayments[
+        s_invoicepayments['PaymentId'].isin(s_payments['Id'].tolist())
+    ]
+
+    s_invoicepayments['InvoiceId'] = s_invoicepayments['InvoiceId'].map(
+        invoice_rel)
+    s_invoicepayments['PaymentId'] = s_invoicepayments['PaymentId'].map(
+        payment_rel)
+    s_invoicepayments['RefundInvoicePaymentId'] = s_invoicepayments.get(
+        'RefundInvoicePaymentId').map(invoicepayment_rel)
+
     ###############################
     # PAYPLANITEM TABLE TRANSFORM #
     ###############################
+
+    # Filter out items skipped above
+    s_payplanitems = s_payplanitems[
+        s_payplanitems['PayPlanId'].isin(s_payplans['Id'].tolist())
+    ]
 
     s_payplanitems['PayPlanId'] = s_payplanitems['PayPlanId'].map(payplan_rel)
 
