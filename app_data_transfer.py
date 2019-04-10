@@ -501,8 +501,11 @@ def transfer_custom_fields(source, destination, contact_rel):
         suffixes=(f'_{source.appname}', f'_{destination.appname}')
     )
     cf_id_rel = {}
+    cf_name_rel = {}
     for _, cf in cfs.iterrows():
         cf_id_rel[cf[s_id]] = cf[d_id]
+        cf_name_rel[cf[f'FieldName_{source.appname}']] = cf[
+            f'FieldName_{destination.appname}']
 
     #########################
     # ADD Custom Field Data #
@@ -566,16 +569,14 @@ def transfer_custom_fields(source, destination, contact_rel):
         if not dds_to_import.empty:
             destination.insert_dataframe('DrilldownOption', dds_to_import)
 
-    cf_data.rename(fieldname_rel, axis=1, inplace=True)
-
     # Filter out contacts not in contact_rel
     cf_data = cf_data[cf_data['Id'].isin(list(contact_rel.keys()))]
 
     cf_data['Id'] = cf_data['Id'].map(contact_rel)
     cf_data_to_import = cf_data[cf_data['Id'].notnull()].copy()
     cf_data_to_import['Id'] = cf_data_to_import['Id'].astype(int)
-    cf_data_to_import.rename(fieldname_rel, axis=1, inplace=True)
-    cf_data_to_import = cf_data_to_import[list(fieldname_rel.values())]
+    cf_data_to_import.rename(cf_name_rel, axis=1, inplace=True)
+    cf_data_to_import = cf_data_to_import[list(cf_name_rel.values())]
 
     # TODO: add messaging for when they need to purge custom fields
     if not cf_data_to_import.empty:
