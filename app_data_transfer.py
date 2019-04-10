@@ -454,7 +454,8 @@ def transfer_custom_fields(source, destination, contact_rel):
         old_name = getattr(row, s_fieldname)
         new_name = getattr(row, 'NewDatabaseName')
         fieldname_rel[old_name] = new_name
-        # TODO: fix fieldname_rel to work after fields are added to dataform field
+        # TODO: fix fieldname_rel to work after fields are added
+        #  to dataform field
 
     #####################
     # ADD Custom Fields #
@@ -764,7 +765,13 @@ def transfer_products(source, destination):
     s_subplans['ProductId'] = s_subplans['ProductId'].map(prod_rel)
     s_subplans = s_subplans.dropna(subset=['ProductId'])
 
-    sp_headers = ['ProductId', 'Cycle', 'Frequency', 'NumberOfCycles', 'PlanPrice']
+    sp_headers = [
+        'ProductId',
+        'Cycle',
+        'Frequency',
+        'NumberOfCycles',
+        'PlanPrice'
+    ]
     for header in sp_headers:
         s_subplans[header] = s_subplans[header].fillna(0)
         d_subplans[header] = d_subplans[header].fillna(0)
@@ -905,7 +912,7 @@ def transfer_opportunities(
         won_stage_id = int(won_stage_string)
         new_won_stage_id = stage_rel[won_stage_id]
         destination.update_app_setting('stagewin', new_won_stage_id)
-    
+
     loss_stage_string = source.get_app_setting('stageloss')
     if loss_stage_string:
         loss_stage_id = int(loss_stage_string)
