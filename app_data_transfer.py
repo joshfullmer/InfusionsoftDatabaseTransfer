@@ -276,7 +276,7 @@ def transfer_contacts(
         # Convert Groups field using tag relationship dictionary
         new_groups = []
         for groups in contacts['Groups'].tolist():
-            if groups:
+            if groups and !groups.isdigit():
                 group_ids = [str(tag_rel[int(x)])
                              for x in groups.split(',')
                              if x.isdigit() and
