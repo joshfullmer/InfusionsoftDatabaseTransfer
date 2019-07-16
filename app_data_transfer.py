@@ -293,6 +293,7 @@ def transfer_contacts(
     contacts['CreatedBy'] = contacts['CreatedBy'].map(user_rel)
     contacts['LastUpdatedBy'] = contacts['LastUpdatedBy'].map(user_rel)
     contacts['OwnerID'] = contacts['OwnerID'].map(user_rel)
+    contacts.drop(columns=['OffSetTimeZone'], axis = 1)
     if t_ls:
         contacts['LeadSourceId'] = contacts['LeadSourceId'].map(ls_rel)
     else:
@@ -599,13 +600,17 @@ def transfer_tag_applications(source, destination, contact_rel, tag_ids=[]):
         s_tag_apps = s_tag_apps[s_tag_apps['GroupId'].isin(tag_ids)]
 
     # Get list of existing apps into one object each
-    existing_tag_apps = []
+    existing_tag_apps = {}
     for row in d_tag_apps.itertuples():
         old_contact_id = getattr(row, 'ContactId')
         old_tag_id = getattr(row, 'GroupId')
         if pd.isnull(old_contact_id):
             continue
-        existing_tag_apps.append(f'{int(old_contact_id)},{old_tag_id}')
+        existing_tag_apps[old_contact_id] = existing_tag_apps.get(
+            old_contact_id,
+            []
+        )
+        existing_tag_apps[old_contact_id].append(old_tag_id)
 
     # Get tag relationship for mapping
     tag_rel = transfer_tags(source, destination, tag_ids)
@@ -621,12 +626,13 @@ def transfer_tag_applications(source, destination, contact_rel, tag_ids=[]):
 
     # Check if the tag application already exists
     def tag_exists(row):
+        row = dict(row)
         contact_id = row['ContactId']
         if pd.isnull(contact_id):
             return False
         contact_id = int(contact_id)
         group_id = row['GroupId']
-        return f'{contact_id},{group_id}' in existing_tag_apps
+        return group_id in existing_tag_apps[contact_id]
 
     s_tag_apps['Exists?'] = s_tag_apps.apply(
         lambda x: tag_exists(x),
