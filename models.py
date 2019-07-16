@@ -149,7 +149,9 @@ class Database:
         create_contact_rel_table = (f"""
             CREATE TABLE IF NOT EXISTS `{contact_rel_table}` (
                 `{s_id}` int(10) NOT NULL,
-                `{d_id}` int(10) NOT NULL
+                `{d_id}` int(10) NOT NULL,
+                KEY `{s_id}` (`{s_id}`),
+                KEY `{d_id}` (`{d_id}`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
         """)
 
@@ -173,7 +175,9 @@ class Database:
         create_cc_rel_table = (f"""
             CREATE TABLE IF NOT EXISTS `{cc_rel_table}` (
                 `{s_id}` int(10) NOT NULL,
-                `{d_id}` int(10) NOT NULL
+                `{d_id}` int(10) NOT NULL,
+                KEY `{s_id}` (`{s_id}`),
+                KEY `{d_id}` (`{d_id}`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
         """)
 
