@@ -276,7 +276,7 @@ def transfer_contacts(
         # Convert Groups field using tag relationship dictionary
         new_groups = []
         for groups in contacts['Groups'].tolist():
-            if groups:
+            if groups and (not isinstance(groups, int)):
                 group_ids = [str(tag_rel[int(x)])
                              for x in groups.split(',')
                              if x.isdigit() and
@@ -455,7 +455,8 @@ def transfer_custom_fields(source, destination, contact_rel):
         old_name = getattr(row, s_fieldname)
         new_name = getattr(row, 'NewDatabaseName')
         fieldname_rel[old_name] = new_name
-        # TODO: fix fieldname_rel to work after fields are added to dataform field
+        # TODO: fix fieldname_rel to work after fields are added
+        #  to dataform field
 
     #####################
     # ADD Custom Fields #
@@ -501,8 +502,11 @@ def transfer_custom_fields(source, destination, contact_rel):
         suffixes=(f'_{source.appname}', f'_{destination.appname}')
     )
     cf_id_rel = {}
+    cf_name_rel = {}
     for _, cf in cfs.iterrows():
         cf_id_rel[cf[s_id]] = cf[d_id]
+        cf_name_rel[cf[f'FieldName_{source.appname}']] = cf[
+            f'FieldName_{destination.appname}']
 
     #########################
     # ADD Custom Field Data #
@@ -566,16 +570,14 @@ def transfer_custom_fields(source, destination, contact_rel):
         if not dds_to_import.empty:
             destination.insert_dataframe('DrilldownOption', dds_to_import)
 
-    cf_data.rename(fieldname_rel, axis=1, inplace=True)
-
     # Filter out contacts not in contact_rel
     cf_data = cf_data[cf_data['Id'].isin(list(contact_rel.keys()))]
 
     cf_data['Id'] = cf_data['Id'].map(contact_rel)
     cf_data_to_import = cf_data[cf_data['Id'].notnull()].copy()
     cf_data_to_import['Id'] = cf_data_to_import['Id'].astype(int)
-    cf_data_to_import.rename(fieldname_rel, axis=1, inplace=True)
-    cf_data_to_import = cf_data_to_import[list(fieldname_rel.values())]
+    cf_data_to_import.rename(cf_name_rel, axis=1, inplace=True)
+    cf_data_to_import = cf_data_to_import[list(cf_name_rel.values())]
 
     # TODO: add messaging for when they need to purge custom fields
     if not cf_data_to_import.empty:
@@ -770,7 +772,13 @@ def transfer_products(source, destination):
     s_subplans['ProductId'] = s_subplans['ProductId'].map(prod_rel)
     s_subplans = s_subplans.dropna(subset=['ProductId'])
 
-    sp_headers = ['ProductId', 'Cycle', 'Frequency', 'NumberOfCycles', 'PlanPrice']
+    sp_headers = [
+        'ProductId',
+        'Cycle',
+        'Frequency',
+        'NumberOfCycles',
+        'PlanPrice'
+    ]
     for header in sp_headers:
         s_subplans[header] = s_subplans[header].fillna(0)
         d_subplans[header] = d_subplans[header].fillna(0)
@@ -911,7 +919,7 @@ def transfer_opportunities(
         won_stage_id = int(won_stage_string)
         new_won_stage_id = stage_rel[won_stage_id]
         destination.update_app_setting('stagewin', new_won_stage_id)
-    
+
     loss_stage_string = source.get_app_setting('stageloss')
     if loss_stage_string:
         loss_stage_id = int(loss_stage_string)
