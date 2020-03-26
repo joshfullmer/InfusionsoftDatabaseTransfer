@@ -154,7 +154,8 @@ def transfer_dropdown_values(source, destination):
         missing_values = [v for v in s_values if v not in d_values]
         if missing_values:
             modified = True
-        values_string = ','.join(d_values + missing_values)
+        raw_string = ','.join(d_values + missing_values)
+        values_string = raw_string.replace("'", "''")
         destination.update_app_setting(dropdown, values_string)
     return modified
 
