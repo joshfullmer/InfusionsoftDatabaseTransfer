@@ -3,6 +3,9 @@ import os
 import pandas as pd
 import re
 import datetime as dt
+import sys
+# from pprint import pprint
+#import numpy as np
 
 from models import Database
 
@@ -71,10 +74,22 @@ def transfer_lead_sources(source, destination):
     return ls_rel
 
 
-def transfer_tags(source, destination):
-    # Get matching tag categories
+def transfer_tags(source, destination, tag_ids=[]):
+    # Get tags to transfer, then filter by provided tag IDs list.
+    s_tags = source.get_table('ContactGroup')
+    d_tags = destination.get_table('ContactGroup')
+
+    if tag_ids:
+        s_tags = s_tags[s_tags['Id'].isin(tag_ids)].copy()
+        cats_to_transfer = list(s_tags['GroupCategoryId'].unique())
+
+    # Get matching tag categories, then filter only those used by the tags
+    # to transfer
     s_tc = source.get_table('ContactGroupCategory')
     d_tc = destination.get_table('ContactGroupCategory')
+
+    if tag_ids:
+        s_tc = s_tc[s_tc['Id'].isin(cats_to_transfer)].copy()
 
     # Generate labels for Id matching
     s_id = f'Id_{source.appname}'
@@ -101,8 +116,6 @@ def transfer_tags(source, destination):
     tc_rel[0] = 0
 
     # Transfer tags
-    s_tags = source.get_table('ContactGroup')
-    d_tags = destination.get_table('ContactGroup')
 
     # Getting list of matches
     tag_matches = pd.merge(
@@ -143,7 +156,8 @@ def transfer_dropdown_values(source, destination):
         missing_values = [v for v in s_values if v not in d_values]
         if missing_values:
             modified = True
-        values_string = ','.join(d_values + missing_values)
+        raw_string = ','.join(d_values + missing_values)
+        values_string = raw_string.replace("'", "''")
         destination.update_app_setting(dropdown, values_string)
     return modified
 
@@ -203,7 +217,14 @@ def get_user_relationship(source, destination):
     return user_rel
 
 
-def transfer_contacts(source, destination, t_tags, t_ls, t_comp):
+def transfer_contacts(
+        source,
+        destination,
+        t_tags,
+        t_ls,
+        t_comp,
+        contacts_with_tag_id=None,
+        tag_ids=[]):
     """
     Transfers all contacts and companies to destination app
 
@@ -214,12 +235,19 @@ def transfer_contacts(source, destination, t_tags, t_ls, t_comp):
 
     contacts = source.get_table('Contact')
 
+    # Filter contacts to import
     if t_comp:
         contacts = contacts.loc[contacts.IsUser == 0
                                 & ~(contacts.Id != contacts.CompanyID)]
     else:
         # Filter contacts to remove user records
         contacts = contacts[contacts.IsUser == 0]
+
+    if contacts_with_tag_id:
+        tag_apps = source.get_table('ContactGroupAssign')
+        f_tag_apps = tag_apps[tag_apps['GroupId'] == contacts_with_tag_id]
+        contact_ids_to_keep = f_tag_apps['ContactId'].tolist()
+        contacts = contacts[contacts['Id'].isin(contact_ids_to_keep)]
 
     # Create new IDs and ID relationship
     old_ids = contacts['Id'].tolist()
@@ -246,13 +274,17 @@ def transfer_contacts(source, destination, t_tags, t_ls, t_comp):
     # Transfer Tags
     if t_tags:
         # Get tag relationship dictionary
-        tag_rel = transfer_tags(source, destination)
+        tag_rel = transfer_tags(source, destination, tag_ids)
 
         # Convert Groups field using tag relationship dictionary
         new_groups = []
         for groups in contacts['Groups'].tolist():
-            if groups:
-                group_ids = [str(tag_rel[int(x)]) for x in groups.split(',')]
+            if groups and (not isinstance(groups, int)):
+                group_ids = [str(tag_rel[int(x)])
+                             for x in groups.split(',')
+                             if x.isdigit() and
+                             int(x) in tag_rel.keys()]
+
                 new_groups.append(','.join(group_ids))
             else:
                 new_groups.append(groups)
@@ -264,6 +296,7 @@ def transfer_contacts(source, destination, t_tags, t_ls, t_comp):
     contacts['CreatedBy'] = contacts['CreatedBy'].map(user_rel)
     contacts['LastUpdatedBy'] = contacts['LastUpdatedBy'].map(user_rel)
     contacts['OwnerID'] = contacts['OwnerID'].map(user_rel)
+    contacts.drop(columns=['OffSetTimeZone'], axis = 1)
     if t_ls:
         contacts['LeadSourceId'] = contacts['LeadSourceId'].map(ls_rel)
     else:
@@ -275,7 +308,11 @@ def transfer_contacts(source, destination, t_tags, t_ls, t_comp):
     # Transfer companies
     if t_comp:
         # Transfer primary contact for companies
-        companies = source.get_table('Company')
+        companies = source.get_table('CompanyOwner')
+
+        # Filter out items not in contact_rel
+        companies = companies[companies['MainContactId'].isin(
+                              list(contact_rel.keys()))]
 
         # Field reassignments
         companies['Id'] = companies['Id'].map(contact_rel)
@@ -284,15 +321,130 @@ def transfer_contacts(source, destination, t_tags, t_ls, t_comp):
         )
 
         # Transfer company records
-        destination.insert_dataframe('Company', companies)
+        destination.insert_dataframe('CompanyOwner', companies)
 
     # Apply Tag to Transferred Contacts
     apply_transfer_tag(source, destination, contact_rel)
 
     return contact_rel
 
+def dataframe_difference(df1, df2, which=None):
+    """Find rows which are different between two DataFrames."""
+    comparison_df = df2.merge(df1,
+                              indicator=True,
+                              how='outer')
+    if which is None:
+        diff_df = comparison_df[comparison_df['_merge'] != 'both']
+    else:
+        diff_df = comparison_df[comparison_df['_merge'] == which]
+    return diff_df
 
 def transfer_custom_fields(source, destination, contact_rel):
+    # Generate labels for Id matching
+    s_id = f'Id_{source.appname}'
+    d_id = f'Id_{destination.appname}'
+
+    # Generate labels for Id matching
+    s_id = f'Id_{source.appname}'
+    d_id = f'Id_{destination.appname}'
+
+    create_string = source.get_table_create('Custom_Contact')
+    create_field_strings = create_string.split('\n')[2:-2]
+    field_creation = {}
+    for string in create_field_strings:
+        fieldname = re.search(r'`(.*)`', string).group(1)
+        string = string.replace(f'`{fieldname}`', '')
+        string = string.strip().strip(',')
+        field_creation[fieldname] = string
+
+    s_custom_fields = source.get_table('DataFormField')
+    s_contact_cfs = s_custom_fields[s_custom_fields['FormId'] == -1].copy()
+    if not len(s_contact_cfs.index):
+        return None
+    d_custom_fields = destination.get_table('DataFormField')
+    d_contact_cfs = d_custom_fields[d_custom_fields['FormId'] == -1].copy()
+
+    # Get list of drilldown custom fieldnames
+    drilldowns = s_custom_fields[(s_custom_fields['DataType'] == 23) &
+                                 (s_custom_fields['FormId'] == -1)]
+    drilldown_names = drilldowns['FieldName'].tolist()
+
+    # Generate matches on Label and Type
+    s_fieldname = f'FieldName_{source.appname}'
+    items = [
+        s_id,
+        d_id,
+        s_fieldname,
+        f'NewDatabaseName'
+    ]
+    print(items)
+    matches = pd.merge(
+        s_contact_cfs,
+        d_contact_cfs,
+        how='left',
+        on=['DisplayName', 'DataType'],
+        suffixes=(f'_{source.appname}', f'_{destination.appname}')
+    )
+
+    # Handle database names
+    d_db_names = destination.get_column_names('Custom_Contact')
+
+    def fieldname_match_check(row):
+        if pd.isnull(row[d_id]):
+            return handle_db_names(row[s_fieldname], d_db_names)
+        else:
+            return row[f'FieldName_{source.appname}']
+
+    matches['NewDatabaseName'] = matches.apply(
+        lambda x: fieldname_match_check(x),
+        axis=1
+    )
+    matches = matches.filter(items=items)
+
+    # Filter to achieve list of missing custom fields
+    missing = matches[matches[d_id].isnull()]
+    missing_ids = missing[s_id].tolist()
+    missing_rows = s_contact_cfs.loc[s_contact_cfs['Id'].isin(missing_ids)]
+    missing_rows = missing_rows.copy()
+
+    # Get auto increment and generate list of ids based on that
+    offset = 50
+    increment_start = destination.get_auto_increment('DataFormField') + offset
+    increment_end = (2 * len(missing_rows)) + increment_start
+    new_ids = [i for i in range(increment_start, increment_end, 2)]
+
+    # Update missing categories to have newly generated ids
+    new_ids_series = pd.Series(new_ids)
+    missing_rows['Id'] = new_ids_series.values
+    
+    #####################################
+    # Add custom field tabs and headers #
+    #####################################
+
+    s_tabs = source.get_table('DataFormTab')
+    d_tabs = destination.get_table('DataFormTab')
+
+    s_contact_tabs = s_tabs[s_tabs['FormId'] == -1].copy()
+    d_contact_tabs = d_tabs[d_tabs['FormId'] == -1].copy()
+
+    tab_matches = pd.merge(
+        s_contact_tabs,
+        d_contact_tabs,
+        on='TabName',
+        how='left',
+        suffixes=(f'_{source.appname}', f'_{destination.appname}')
+    ).filter(items=[s_id, d_id])
+
+    tab_rel = create_missing_records(
+        'DataFormTab',
+        destination,
+        s_contact_tabs,
+        tab_matches,
+    )
+    print(tab_rel)
+    sys.exit()
+
+def transfer_custom_fieldsOLD(source, destination, contact_rel):
     """
     Creates custom fields in the destination app if they don't already exist
     by the same name and type
@@ -318,6 +470,11 @@ def transfer_custom_fields(source, destination, contact_rel):
         return None
     d_custom_fields = destination.get_table('DataFormField')
     d_contact_cfs = d_custom_fields[d_custom_fields['FormId'] == -1].copy()
+
+    # Get list of drilldown custom fieldnames
+    drilldowns = s_custom_fields[(s_custom_fields['DataType'] == 23) &
+                                 (s_custom_fields['FormId'] == -1)]
+    drilldown_names = drilldowns['FieldName'].tolist()
 
     # Generate matches on Label and Type
     s_fieldname = f'FieldName_{source.appname}'
@@ -416,6 +573,8 @@ def transfer_custom_fields(source, destination, contact_rel):
         old_name = getattr(row, s_fieldname)
         new_name = getattr(row, 'NewDatabaseName')
         fieldname_rel[old_name] = new_name
+        # TODO: fix fieldname_rel to work after fields are added
+        #  to dataform field
 
     #####################
     # ADD Custom Fields #
@@ -424,13 +583,14 @@ def transfer_custom_fields(source, destination, contact_rel):
     # Map fields
     missing_rows['GroupId'] = missing_rows['GroupId'].map(header_rel)
     missing_rows['FieldName'] = missing_rows['FieldName'].map(fieldname_rel)
-
+    
     # Insert dataframe for custom fields
     if not missing_rows.empty:
         destination.insert_dataframe('DataFormField', missing_rows)
 
     # Add custom fields to Custom_Contact
     missing_fieldnames = missing_rows['FieldName'].tolist()
+    #print(missing_fieldnames)
     if missing_fieldnames:
         destination.alter_custom_field_table(
             field_creation,
@@ -447,34 +607,170 @@ def transfer_custom_fields(source, destination, contact_rel):
         axis=1,
         inplace=True,
     )
-    cf_rel = {}
-    for row in matches.itertuples():
-        old_fieldname = getattr(row, s_fieldname)
-        new_fieldname = getattr(row, d_fieldname)
-        cf_rel[old_fieldname] = new_fieldname
+
+    # Create custom field relationship
+    s_cfs = source.get_table('DataFormField')
+    s_cfs = s_cfs[s_cfs['FormId'] == -1].copy()
+    d_cfs = destination.get_table('DataFormField')
+    d_cfs = d_cfs[d_cfs['FormId'] == -1].copy()
+    cfs = pd.merge(
+        s_cfs,
+        d_cfs,
+        how='left',
+        on=['DisplayName', 'DataType'],
+        suffixes=(f'_{source.appname}', f'_{destination.appname}')
+    )
+    cf_id_rel = {}
+    cf_name_rel = {}
+    for _, cf in cfs.iterrows():
+        cf_id_rel[cf[s_id]] = cf[d_id]
+        cf_name_rel[cf[f'FieldName_{source.appname}']] = cf[
+            f'FieldName_{destination.appname}']
 
     #########################
     # ADD Custom Field Data #
     #########################
     s_fieldnames = s_contact_cfs['FieldName'].tolist()
     s_fieldnames.append('Id')
+    #print(s_fieldnames) Field names in a list
 
     cf_data = source.get_table('Custom_Contact').filter(items=s_fieldnames)
-    cf_data.rename(fieldname_rel, axis=1, inplace=True)
-    d_db_names = destination.get_column_names('Custom_Contact')
+
+    # Manage drilldowns
+    if drilldown_names:
+        for name in drilldown_names:
+            cf_data[name] = cf_data[name].astype(object)
+            cf_data[name] = cf_data[name].fillna('')
+            cf_data[name] = cf_data[name].str.replace(r'\.0', '', regex=True)
+        s_dds = source.get_table('DrilldownOption')
+
+        # Get new Ids
+        offset = 50
+        increment_start = (destination.get_auto_increment('DrilldownOption') +
+                           offset)
+        increment_end = (2 * len(s_dds)) + increment_start
+        new_ids = [i for i in range(increment_start, increment_end, 2)]
+        ddo_rel = dict(zip(s_dds['Id'].tolist(), new_ids))
+        ddo_rel[-1] = -1
+        ddo_rel[0] = 0
+
+        # Map new Ids
+        s_dds['Id'] = s_dds['Id'].map(ddo_rel)
+        s_dds['CategoryId'] = s_dds['CategoryId'].map(
+            ddo_rel
+        )
+        s_dds['FieldId'] = s_dds['FieldId'].map(
+            cf_id_rel
+        )
+
+        # Format data
+        s_dds = s_dds[pd.notnull(
+            s_dds['FieldId'])]
+        s_dds['FieldId'] = s_dds['FieldId'].astype(str)
+        s_dds['FieldId'] = s_dds['FieldId'].str.replace(
+            r'\.0',
+            '',
+            regex=True
+        )
+
+        # Check if drilldowns need to be created
+        d_dds = destination.get_table('DrilldownOption')
+        d_dds['FieldId'] = d_dds['FieldId'].astype(str)
+        dds = pd.merge(
+            s_dds,
+            d_dds,
+            how='inner',
+            on=['FieldId', 'Label'],
+            suffixes=(f'_{source.appname}', f'_{destination.appname}')
+        )
+        e_dds = dds[s_id].tolist()
+        dds_to_import = s_dds[~s_dds['Id'].isin(e_dds)]
+
+        # Add rows
+        if not dds_to_import.empty:
+            destination.insert_dataframe('DrilldownOption', dds_to_import)
+    #print(cf_data['TestRadio'])
+    
+    # Filter out contacts not in contact_rel
+    cf_data = cf_data[cf_data['Id'].isin(list(contact_rel.keys()))]
+    #print(cf_data['TestRadio'])
     cf_data['Id'] = cf_data['Id'].map(contact_rel)
     cf_data_to_import = cf_data[cf_data['Id'].notnull()].copy()
+    #print(cf_data_to_import['TestRadio'])
     cf_data_to_import['Id'] = cf_data_to_import['Id'].astype(int)
-    cf_data_to_import.rename(fieldname_rel, axis=1, inplace=True)
+    #print(cf_data_to_import['TestRadio'])
+    cf_data_to_import.rename(cf_name_rel, axis=1, inplace=True)
+    print(cf_data_to_import.columns)
+    #sys.exit()
+    #josh columns
+    oldColumns = list(cf_data_to_import.columns)
+    #for a in oldColumns:
+    #    print(a)
+    #sys.exit()
+    #for col in cf_data_to_import.columns: 
+    #    print(col)
+    #sys.exit()
+    cf_data_to_import = cf_data_to_import[list(cf_name_rel.values())]
+
+    # Gets custom_contact combines and creates statement if any columns need to be added
+    #Get source show custom_contact
+    source_columns = source.show_table_columns('Custom_Contact')
+    #Get source show custom_contact
+    dest_columns = destination.show_table_columns('Custom_Contact')
+    #source to dataframe
+    source_columns = pd.DataFrame(source_columns, columns =['Field', 'Type', 'Null', 'Key', 'Default', 'Extra'])
+    
+    
+
+    #I have Josh Columns I need to add 0's to my list of missing columns and compare with josh, if they match insert
+    #print(source_columns)
+    #print(oldColumns)
+    
+    #destination to dataframe
+    dest_columns = pd.DataFrame(dest_columns, columns =['Field', 'Type', 'Null', 'Key', 'Default', 'Extra'])
+    combine_fields = dataframe_difference(source_columns, dest_columns)
+    select_color = combine_fields.loc[combine_fields['_merge'] == 'right_only']
+    select_color1 = combine_fields.loc[combine_fields['_merge'] == 'left_only']
+    flap = select_color['Field'].tolist()
+    snap = [i + '0' for i in flap]
+    print(snap)
+    print(oldColumns)
+    sys.exit()
+    #clap = pd.DataFrame(flap)
+    #print(clap)
+    sys.exit()
+    alter_statement1 = ''
+    for x in combine_fields.index:
+        if combine_fields['_merge'][x] == 'right_only':
+            field1 = ''.join(combine_fields['Field'][x])
+            field_type1 = field1
+            alter_statement1 += field_type1
+    print(alter_statement1)  
+    sys.exit()  
+    alter_statement = ''
+    for x in combine_fields.index:
+        if combine_fields['_merge'][x] == 'right_only':
+            field = ''.join(combine_fields['Field'][x])
+            typefield = ''.join(combine_fields['Type'][x])
+            field_type = 'ADD ' + field + ' ' + typefield + ', '
+            alter_statement += field_type
+    alter_statement = re.sub(r'\, $',';',alter_statement)
+    
+    destination.alter_missing_cfs(alter_statement)
 
     # TODO: add messaging for when they need to purge custom fields
     if not cf_data_to_import.empty:
-        destination.insert_dataframe('Custom_Contact', cf_data_to_import)
+        #print(cf_data_to_import)
+        destination.insert_dataframe(
+            'Custom_Contact',
+            cf_data_to_import,
+            replace=True
+        )
 
     return matches
 
 
-def transfer_tag_applications(source, destination, contact_rel):
+def transfer_tag_applications(source, destination, contact_rel, tag_ids=[]):
     """
     Transfers the tags which are applied to contacts.
     """
@@ -482,17 +778,28 @@ def transfer_tag_applications(source, destination, contact_rel):
     s_tag_apps = source.get_table('ContactGroupAssign')
     d_tag_apps = destination.get_table('ContactGroupAssign')
 
+    if tag_ids:
+        s_tag_apps = s_tag_apps[s_tag_apps['GroupId'].isin(tag_ids)]
+
     # Get list of existing apps into one object each
-    existing_tag_apps = []
+    existing_tag_apps = {}
     for row in d_tag_apps.itertuples():
         old_contact_id = getattr(row, 'ContactId')
         old_tag_id = getattr(row, 'GroupId')
         if pd.isnull(old_contact_id):
             continue
-        existing_tag_apps.append(f'{int(old_contact_id)},{old_tag_id}')
+        existing_tag_apps[old_contact_id] = existing_tag_apps.get(
+            old_contact_id,
+            []
+        )
+        existing_tag_apps[old_contact_id].append(old_tag_id)
 
     # Get tag relationship for mapping
-    tag_rel = transfer_tags(source, destination)
+    tag_rel = transfer_tags(source, destination, tag_ids)
+
+    # Filter out contacts not in contact_rel
+    s_tag_apps = s_tag_apps[s_tag_apps['ContactId'].isin(
+                            list(contact_rel.keys()))]
 
     # Map relationships to generate new values
     s_tag_apps = s_tag_apps.drop(columns='Id')
@@ -501,12 +808,13 @@ def transfer_tag_applications(source, destination, contact_rel):
 
     # Check if the tag application already exists
     def tag_exists(row):
+        row = dict(row)
         contact_id = row['ContactId']
         if pd.isnull(contact_id):
             return False
         contact_id = int(contact_id)
         group_id = row['GroupId']
-        return f'{contact_id},{group_id}' in existing_tag_apps
+        return group_id in existing_tag_apps[contact_id]
 
     s_tag_apps['Exists?'] = s_tag_apps.apply(
         lambda x: tag_exists(x),
@@ -518,6 +826,9 @@ def transfer_tag_applications(source, destination, contact_rel):
 
     # Remove Exists? column
     tag_apps_to_import = tag_apps_to_import.drop(columns='Exists?')
+
+    # Remove duplicates that may have appeared
+    tag_apps_to_import.drop_duplicates(['ContactId', 'GroupId'], inplace=True)
 
     # Add tag applications
     if not tag_apps_to_import.empty:
@@ -562,19 +873,46 @@ def transfer_contact_actions(source, destination, contact_rel):
 
     actions = source.get_table('ContactAction')
 
+    # actions.to_excel('actionsRaw.xlsx')
+    # input('raw done')
+
     user_rel = get_user_relationship(source, destination)
+
+    # user_df = pd.DataFrame.from_dict(user_rel, orient="index")
+    # user_df.to_csv('user_rel.csv')
+    # input('user_rel created')
+
+    # Filter out contacts not in contact_rel
+    actions = actions[actions['Id'].isin(list(contact_rel.keys()))]
+
+    # actions.to_excel('actionsFiltered.xlsx')
+    input('filtered done')
 
     # Relationship mapping
     actions['ContactId'] = actions['ContactId'].map(contact_rel)
     actions['UserID'] = actions['UserID'].map(user_rel)
+    actions['CreatedBy'] = actions['CreatedBy'].map(user_rel)
+    actions['LastUpdatedBy'] = actions['LastUpdatedBy'].map(user_rel)
     actions['OpportunityId'] = 0
     actions['TemplateId'] = 0
     actions['FunnelId'] = 0
     actions['JGraphId'] = 0
 
-    # Remove actions that don't have a contact
-    actions_to_import = actions[actions['ContactId'].notnull()].copy()
-    actions_to_import['ContactId'] = actions_to_import['ContactId'].astype(int)
+    if os.path.isfile('./overwrite_csv/ContactActionImport.csv'):
+        input('reading from CSV')
+        actions_to_import = pd.read_csv('./overwrite_csv/ContactActionImport.csv')
+        input('actions_to_import is now CSV contents')
+        input('...')
+    else:
+        print('filtering')
+        # Remove actions that don't have a contact
+        actions_to_import = actions[actions['ContactId'].notnull()].copy()
+        actions_to_import['ContactId'] = actions_to_import['ContactId'].astype(int)
+
+        actions_to_import.to_excel('actionsForImport.xlsx')
+        input('to_import done')
+
+    print('completed existing csv check stage')
 
     # Get auto increment and generate list of ids based on that
     offset = 100
@@ -638,10 +976,27 @@ def transfer_products(source, destination):
     s_subplans['ProductId'] = s_subplans['ProductId'].map(prod_rel)
     s_subplans = s_subplans.dropna(subset=['ProductId'])
 
+    sp_headers = [
+        'ProductId',
+        'Cycle',
+        'Frequency',
+        'NumberOfCycles',
+        'PlanPrice'
+    ]
+    for header in sp_headers:
+        s_subplans[header] = s_subplans[header].fillna(0)
+        d_subplans[header] = d_subplans[header].fillna(0)
+        if header == 'PlanPrice':
+            s_subplans[header] = pd.to_numeric(s_subplans[header])
+            d_subplans[header] = pd.to_numeric(d_subplans[header])
+        else:
+            s_subplans[header] = s_subplans[header].astype('int64')
+            d_subplans[header] = d_subplans[header].astype('int64')
+
     subplan_matches = pd.merge(
         s_subplans,
         d_subplans,
-        on=['ProductId', 'Cycle', 'Frequency', 'NumberOfCycles', 'PlanPrice'],
+        on=sp_headers,
         how='left',
         suffixes=(f'_{source.appname}', f'_{destination.appname}')
     ).filter(items=[s_id, d_id])
@@ -763,14 +1118,20 @@ def transfer_opportunities(
 
     # Set Won and Loss stages
 
-    won_stage_id = int(source.get_app_setting('stagewin'))
-    loss_stage_id = int(source.get_app_setting('stageloss'))
+    won_stage_string = source.get_app_setting('stagewin')
+    if won_stage_string:
+        won_stage_id = int(won_stage_string)
+        new_won_stage_id = stage_rel[won_stage_id]
+        destination.update_app_setting('stagewin', new_won_stage_id)
 
-    new_won_stage_id = stage_rel[won_stage_id]
-    new_loss_stage_id = stage_rel[loss_stage_id]
+    loss_stage_string = source.get_app_setting('stageloss')
+    if loss_stage_string:
+        loss_stage_id = int(loss_stage_string)
+        new_loss_stage_id = stage_rel[loss_stage_id]
+        destination.update_app_setting('stageloss', new_loss_stage_id)
 
-    destination.update_app_setting('stagewin', new_won_stage_id)
-    destination.update_app_setting('stageloss', new_loss_stage_id)
+    # Filter out contacts not in contact_rel
+    opps = opps[opps['ContactID'].isin(list(contact_rel.keys()))]
 
     # Field mapping
 
@@ -851,6 +1212,9 @@ def transfer_subscriptions(
 ):
 
     subs = source.get_table('JobRecurring')
+
+    # Filter out contacts not in contact_rel
+    subs = subs[subs['ContactId'].isin(list(contact_rel.keys()))]
 
     # ID mapping
     subs['ContactId'] = subs['ContactId'].map(contact_rel)
@@ -1139,6 +1503,9 @@ def transfer_orders(
     # JOB TABLE TRANSFORM #
     #######################
 
+    # Filter out contacts not in contact_rel
+    s_jobs = s_jobs[s_jobs['ContactId'].isin(list(contact_rel.keys()))]
+
     s_jobs['ContactId'] = s_jobs['ContactId'].map(contact_rel)
     s_jobs['CreatedBy'] = s_jobs['CreatedBy'].map(user_rel)
     s_jobs['LastUpdatedBy'] = s_jobs['LastUpdatedBy'].map(user_rel)
@@ -1159,6 +1526,11 @@ def transfer_orders(
     ###########################
     # INVOICE TABLE TRANSFORM #
     ###########################
+
+    # Filter out contacts not in contact_rel
+    s_invoices = s_invoices[s_invoices['ContactId'].isin(
+                            list(contact_rel.keys()))]
+    s_invoices = s_invoices[s_invoices['JobId'].isin(s_jobs['Id'].tolist())]
 
     # Convert ProductSold field using product relationship dictionary
     new_products = []
@@ -1185,8 +1557,16 @@ def transfer_orders(
     # PAYPLAN TABLE TRANSFORM #
     ###########################
 
+    # Filter out invoices not created above
+    s_payplans = s_payplans[
+        s_payplans['InvoiceId'].isin(s_invoices['Id'].tolist())
+    ]
+
     s_payplans['InvoiceId'] = s_payplans['InvoiceId'].map(invoice_rel)
-    s_payplans['CC1'] = s_payplans['CC1'].map(cc_rel)
+    if cc_rel:
+        s_payplans['CC1'] = s_payplans['CC1'].map(cc_rel)
+    else:
+        s_payplans['CC1'] = 0
     s_payplans['CC2'] = 0
     s_payplans['MerchantAccountId'] = 0
     s_payplans['PaymentGatewayId'] = 0
@@ -1196,6 +1576,17 @@ def transfer_orders(
     ###############################
     # INVOICEITEM TABLE TRANSFORM #
     ###############################
+
+    # Filter out items skipped above
+    s_invoiceitems = s_invoiceitems[
+        s_invoiceitems['ContactId'].isin(list(contact_rel.keys()))
+    ]
+    s_invoiceitems = s_invoiceitems[
+        s_invoiceitems['InvoiceId'].isin(s_invoices['Id'].tolist())
+    ]
+    s_invoiceitems = s_invoiceitems[
+        s_invoiceitems['JobId'].isin(s_jobs['Id'].tolist())
+    ]
 
     s_invoiceitems['InvoiceId'] = s_invoiceitems['InvoiceId'].map(invoice_rel)
     s_invoiceitems['JobId'] = s_invoiceitems['JobId'].map(job_rel)
@@ -1210,6 +1601,11 @@ def transfer_orders(
     # ORDERITEM TABLE TRANSFORM #
     #############################
 
+    # Filter out items not created above
+    s_orderitems = s_orderitems[
+        s_orderitems['OrderId'].isin(s_jobs['Id'].tolist())
+    ]
+
     s_orderitems['OrderId'] = s_orderitems['OrderId'].map(job_rel)
     s_orderitems['ProductId'] = s_orderitems['ProductId'].map(prod_rel)
     s_orderitems['DiscountedOrderItemId'] = 0
@@ -1220,20 +1616,17 @@ def transfer_orders(
     s_orderitems['SourceOrderItemId'] = s_orderitems['SourceOrderItemId'].map(
         orderitem_rel)
 
-    ##################################
-    # INVOICEPAYMENT TABLE TRANSFORM #
-    ##################################
-
-    s_invoicepayments['InvoiceId'] = s_invoicepayments['InvoiceId'].map(
-        invoice_rel)
-    s_invoicepayments['PaymentId'] = s_invoicepayments['PaymentId'].map(
-        payment_rel)
-    s_invoicepayments['RefundInvoicePaymentId'] = s_invoicepayments.get(
-        'RefundInvoicePaymentId').map(invoicepayment_rel)
-
     ###########################
     # PAYMENT TABLE TRANSFORM #
     ###########################
+
+    # Filter out items skipped above
+    s_payments = s_payments[
+        s_payments['ContactId'].isin(list(contact_rel.keys()))
+    ]
+    s_payments = s_payments[
+        s_payments['InvoiceId'].isin(s_invoices['Id'].tolist())
+    ]
 
     s_payments['UserId'] = s_payments['UserId'].map(user_rel)
     s_payments['ContactId'] = s_payments['ContactId'].map(contact_rel)
@@ -1245,9 +1638,33 @@ def transfer_orders(
     s_payments['PaymentGatewayId'] = 0
     s_payments['RefundId'] = s_payments['RefundId'].map(payment_rel)
 
+    ##################################
+    # INVOICEPAYMENT TABLE TRANSFORM #
+    ##################################
+
+    # Filter out items skipped above
+    s_invoicepayments = s_invoicepayments[
+        s_invoicepayments['InvoiceId'].isin(s_invoices['Id'].tolist())
+    ]
+    s_invoicepayments = s_invoicepayments[
+        s_invoicepayments['PaymentId'].isin(s_payments['Id'].tolist())
+    ]
+
+    s_invoicepayments['InvoiceId'] = s_invoicepayments['InvoiceId'].map(
+        invoice_rel)
+    s_invoicepayments['PaymentId'] = s_invoicepayments['PaymentId'].map(
+        payment_rel)
+    s_invoicepayments['RefundInvoicePaymentId'] = s_invoicepayments.get(
+        'RefundInvoicePaymentId').map(invoicepayment_rel)
+
     ###############################
     # PAYPLANITEM TABLE TRANSFORM #
     ###############################
+
+    # Filter out items skipped above
+    s_payplanitems = s_payplanitems[
+        s_payplanitems['PayPlanId'].isin(s_payplans['Id'].tolist())
+    ]
 
     s_payplanitems['PayPlanId'] = s_payplanitems['PayPlanId'].map(payplan_rel)
 

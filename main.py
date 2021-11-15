@@ -22,20 +22,20 @@ Please provide information for each application:
     """)
     source_app = ''
     while len(source_app) <= 0:
-        source_app = input('Source Application Name:\n')
+        source_app = 'daniels'#input('Source Application Name:\n')
     source_port = 0
     while len(str(source_port)) != 5:
         try:
-            source_port = int(input('Source Application Port:\n'))
+            source_port = 27003#int(input('Source Application Port:\n'))
         except ValueError:
             print('Port number must be 5-digits.\n')
     destination_app = ''
     while len(destination_app) <= 0:
-        destination_app = input('Destination Application Name:\n')
+        destination_app = 'ap187'#input('Destination Application Name:\n')
     destination_port = 0
     while len(str(destination_port)) != 5:
         try:
-            destination_port = input('Destination Application Port:\n')
+            destination_port = 27014#input('Destination Application Port:\n')
         except ValueError:
             print('Port number must be 5-digits.\n')
     clear()
@@ -47,7 +47,18 @@ Yes is the default selection.  Press anything besides 'n' to say yes.
     """)
     config = defaultdict(bool)
     config['CONTACTS'] = input('Contacts? (Yn) ').lower() != 'n'
-    if not config['CONTACTS']:
+    if config['CONTACTS']:
+        while True:
+            tag_id = input("""
+Only import contacts who have a specific tag (ID)? (leave blank for all)  """)
+            if tag_id:
+                try:
+                    config['CONTACTS_WITH_TAG_ID'] = int(tag_id)
+                except ValueError:
+                    print('\nPlease provide Tag ID only')
+                    continue
+            break
+    else:
         config['CONTACTS'] = input("""
 The following things rely on the Contact table:
 Custom Fields, Contact Actions, Opportunities, Credit Cards, Subscriptions,
@@ -55,6 +66,11 @@ and Orders
 Skip Contacts? (Yn)"""
                                    ).lower() == 'n'
     config['TAGS'] = input('Tags? (Yn) ').lower() != 'n'
+    if config['TAGS']:
+        tag_ids = input("""
+Transfer all tags (hit enter) or just a subset (comma separated list)?""")
+        if tag_ids:
+            config['TAG_IDS'] = [int(x) for x in tag_ids.split(',')]
     config['LEAD_SOURCES'] = input('Lead Sources? (Yn) ').lower() != 'n'
     config['COMPANIES'] = input('Companies? (Yn) ').lower() != 'n'
     config['PRODUCTS'] = input('Products? (Yn) ').lower() != 'n'
@@ -65,9 +81,10 @@ Skip Contacts? (Yn)"""
             'Contact Actions? (Yn) ').lower() != 'n'
         config['OPPORTUNITIES'] = input('Opportunities? (Yn) ').lower() != 'n'
         config['CREDIT_CARDS'] = input('Credit Cards? (Yn) ').lower() != 'n'
+    if config['CONTACTS'] and config['PRODUCTS']:
+        config['ORDERS'] = input('Orders? (Yn) ').lower() != 'n'
     if config['CONTACTS'] and config['PRODUCTS'] and config['CREDIT_CARDS']:
         config['SUBSCRIPTIONS'] = input('Subscriptions? (Yn) ').lower() != 'n'
-        config['ORDERS'] = input('Orders? (Yn) ').lower() != 'n'
 
     #######################
     # BEGIN DATA TRANSFER #
@@ -118,6 +135,8 @@ Skip Contacts? (Yn)"""
                 config['TAGS'],
                 config['LEAD_SOURCES'],
                 config['COMPANIES'],
+                config.get('CONTACTS_WITH_TAG_ID'),
+                config.get('TAG_IDS', [])
             )
             with open(rel_dir + '/contact_rel.json', 'w') as file:
                 json.dump(contact_rel, file)
@@ -150,7 +169,12 @@ Skip Contacts? (Yn)"""
 
     if config['TAGS']:
         start_count = destination.get_count('ContactGroupAssign')
-        adt.transfer_tag_applications(source, destination, contact_rel)
+        adt.transfer_tag_applications(
+            source,
+            destination,
+            contact_rel,
+            config.get('TAG_IDS', []),
+        )
         end_count = destination.get_count('ContactGroupAssign')
         transfer_count = end_count - start_count
         print(f'{transfer_count} Tag Applications Transferred.')
@@ -161,7 +185,19 @@ Skip Contacts? (Yn)"""
 
     if config['PRODUCTS']:
         start_count = destination.get_count('Product')
-        prod_rel, subplan_rel = adt.transfer_products(source, destination)
+        if os.path.isfile(rel_dir + '/prod_rel.json'):
+            with open(rel_dir + '/prod_rel.json') as file:
+                prod_rel = json.load(file)
+            with open(rel_dir + '/subplan_rel.json') as file:
+                subplan_rel = json.load(file)
+            prod_rel = {int(k): int(v) for k, v in prod_rel.items()}
+            subplan_rel = {int(k): int(v) for k, v in subplan_rel.items()}
+        else:
+            prod_rel, subplan_rel = adt.transfer_products(source, destination)
+            with open(rel_dir + '/prod_rel.json', 'w') as file:
+                json.dump(prod_rel, file)
+            with open(rel_dir + '/subplan_rel.json', 'w') as file:
+                json.dump(subplan_rel, file)
         end_count = destination.get_count('Product')
         transfer_count = end_count - start_count
         print(f'{transfer_count} Products Transferred.')
@@ -279,6 +315,8 @@ Skip Contacts? (Yn)"""
                 job_rel = json.load(file)
             job_rel = {int(k): int(v) for k, v in job_rel.items()}
         else:
+            if not config['CREDIT_CARDS']:
+                cc_rel = {}
             job_rel = adt.transfer_orders(
                 source,
                 destination,

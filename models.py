@@ -1,13 +1,20 @@
 from mysql.connector import connect
+import mysql.connector
+from dotenv import load_dotenv
 import pandas as pd
+import os
 import re
+import sys
+
+load_dotenv()
 
 
 class Database:
     def __init__(self, appname, port):
+        PASS = os.getenv('PASS')
         self.connection = connect(
             user=appname,
-            password=f'5425{appname}',
+            password=f'{PASS}{appname}',
             database=appname,
             host='127.0.0.1',
             port=port
@@ -72,13 +79,23 @@ class Database:
         self.cursor.execute(query)
         results = [row for row in self.cursor]
         return results[0][1]
+    
+    def show_table_columns(self, tablename):
+        query = (f"""
+            SHOW COLUMNS FROM {tablename};
+        """)
+        self.cursor.execute(query)
+        results = [row for row in self.cursor]
+        return results
 
     def alter_custom_field_table(self, create_statements, rel, missing):
         create_strings = []
         for fieldname in missing:
+            #print(fieldname)
             create_strings.append(
                 f'ADD `{rel[fieldname]}` {create_statements[fieldname]}'
             )
+            print(create_strings)
 
         create_block = ',\n'.join(create_strings)
         query = (f"""
@@ -87,35 +104,61 @@ class Database:
         """)
         self.cursor.execute(query)
         self.connection.commit()
+    
+    def alter_missing_cfs(self, alter_statement):
+        alter = 'ALTER TABLE Custom_Contact '
+        query = alter + alter_statement
+        try:
+            #print(query)
+            self.cursor.execute(query)
+            self.connection.commit()
+        except Exception as e:
+                print(e)
+                #sys.exit()
 
-    def insert_dataframe(self, tablename, dataframe):
+    def insert_dataframe(self, tablename, dataframe, replace=False):
         quoted_columns = [f'`{column}`' for column in list(dataframe)]
         column_names = ','.join(quoted_columns)
 
-        rows = [tuple(x) for x in dataframe.values]
-        row_strings = []
-        for row in rows:
-            row_values = []
-            for cell in row:
-                if isinstance(cell, int):
-                    row_values.append(str(cell))
-                elif cell is None or pd.isnull(cell):
-                    row_values.append('NULL')
-                else:
-                    string = re.sub(r'"', '\\"', str(cell))
-                    row_values.append('"' + string + '"')
-            row_string = '(' + ','.join(row_values) + ')'
-            row_strings.append(row_string)
-        values = ',\n'.join(row_strings)
+        n = 10000
+        df_list = [dataframe[i:i+n] for i in range(0, dataframe.shape[0], n)]
 
-        query = (f"""
-            INSERT INTO {tablename}
-                ({column_names})
-            VALUES
-                {values};
-        """)
-        self.cursor.execute(query)
-        self.connection.commit()
+        for df in df_list:
+            rows = [tuple(x) for x in df.values]
+            row_strings = []
+            for row in rows:
+                row_values = []
+                for cell in row:
+                    if isinstance(cell, int):
+                        row_values.append(str(cell))
+                    elif cell is None or pd.isnull(cell):
+                        row_values.append('NULL')
+                    else:
+                        string = re.escape(str(cell))
+                        string = re.sub(r'"', r'\"', string)
+                        row_values.append('"' + string + '"')
+                row_string = '(' + ','.join(row_values) + ')'
+                row_strings.append(row_string)
+            values = ',\n'.join(row_strings)
+
+            if replace:
+                insert = 'REPLACE'
+            else:
+                insert = 'INSERT'
+
+            query = (f"""
+                {insert} INTO {tablename}
+                    ({column_names})
+                VALUES
+                    {values};
+            """)
+            #try:
+            print(query)
+            self.cursor.execute(query)
+            #except Exception as e:
+                #print(e)
+                #sys.exit()
+            self.connection.commit()
 
     def update_app_setting(self, setting, value):
         query = (f"""
@@ -139,7 +182,9 @@ class Database:
         create_contact_rel_table = (f"""
             CREATE TABLE IF NOT EXISTS `{contact_rel_table}` (
                 `{s_id}` int(10) NOT NULL,
-                `{d_id}` int(10) NOT NULL
+                `{d_id}` int(10) NOT NULL,
+                KEY `{s_id}` (`{s_id}`),
+                KEY `{d_id}` (`{d_id}`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
         """)
 
@@ -163,7 +208,9 @@ class Database:
         create_cc_rel_table = (f"""
             CREATE TABLE IF NOT EXISTS `{cc_rel_table}` (
                 `{s_id}` int(10) NOT NULL,
-                `{d_id}` int(10) NOT NULL
+                `{d_id}` int(10) NOT NULL,
+                KEY `{s_id}` (`{s_id}`),
+                KEY `{d_id}` (`{d_id}`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
         """)
 
