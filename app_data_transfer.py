@@ -306,7 +306,7 @@ def transfer_contacts(
     # Transfer companies
     if t_comp:
         # Transfer primary contact for companies
-        companies = source.get_table('Company')
+        companies = source.get_table('CompanyOwner')
 
         # Filter out items not in contact_rel
         companies = companies[companies['MainContactId'].isin(
@@ -319,7 +319,7 @@ def transfer_contacts(
         )
 
         # Transfer company records
-        destination.insert_dataframe('Company', companies)
+        destination.insert_dataframe('CompanyOwner', companies)
 
     # Apply Tag to Transferred Contacts
     apply_transfer_tag(source, destination, contact_rel)
@@ -694,22 +694,46 @@ def transfer_contact_actions(source, destination, contact_rel):
 
     actions = source.get_table('ContactAction')
 
+    # actions.to_excel('actionsRaw.xlsx')
+    # input('raw done')
+
     user_rel = get_user_relationship(source, destination)
+
+    # user_df = pd.DataFrame.from_dict(user_rel, orient="index")
+    # user_df.to_csv('user_rel.csv')
+    # input('user_rel created')
 
     # Filter out contacts not in contact_rel
     actions = actions[actions['Id'].isin(list(contact_rel.keys()))]
 
+    # actions.to_excel('actionsFiltered.xlsx')
+    input('filtered done')
+
     # Relationship mapping
     actions['ContactId'] = actions['ContactId'].map(contact_rel)
     actions['UserID'] = actions['UserID'].map(user_rel)
+    actions['CreatedBy'] = actions['CreatedBy'].map(user_rel)
+    actions['LastUpdatedBy'] = actions['LastUpdatedBy'].map(user_rel)
     actions['OpportunityId'] = 0
     actions['TemplateId'] = 0
     actions['FunnelId'] = 0
     actions['JGraphId'] = 0
 
-    # Remove actions that don't have a contact
-    actions_to_import = actions[actions['ContactId'].notnull()].copy()
-    actions_to_import['ContactId'] = actions_to_import['ContactId'].astype(int)
+    if os.path.isfile('./overwrite_csv/ContactActionImport.csv'):
+        input('reading from CSV')
+        actions_to_import = pd.read_csv('./overwrite_csv/ContactActionImport.csv')
+        input('actions_to_import is now CSV contents')
+        input('...')
+    else:
+        print('filtering')
+        # Remove actions that don't have a contact
+        actions_to_import = actions[actions['ContactId'].notnull()].copy()
+        actions_to_import['ContactId'] = actions_to_import['ContactId'].astype(int)
+
+        actions_to_import.to_excel('actionsForImport.xlsx')
+        input('to_import done')
+
+    print('completed existing csv check stage')
 
     # Get auto increment and generate list of ids based on that
     offset = 100

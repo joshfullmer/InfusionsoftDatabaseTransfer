@@ -1,13 +1,18 @@
 from mysql.connector import connect
+from dotenv import load_dotenv
 import pandas as pd
+import os
 import re
+
+load_dotenv()
 
 
 class Database:
     def __init__(self, appname, port):
+        PASS = os.getenv('PASS')
         self.connection = connect(
             user=appname,
-            password=f'5425{appname}',
+            password=f'{PASS}{appname}',
             database=appname,
             host='127.0.0.1',
             port=port
