@@ -3,7 +3,9 @@ import os
 import pandas as pd
 import re
 import datetime as dt
+import sys
 # from pprint import pprint
+#import numpy as np
 
 from models import Database
 
@@ -326,8 +328,123 @@ def transfer_contacts(
 
     return contact_rel
 
+def dataframe_difference(df1, df2, which=None):
+    """Find rows which are different between two DataFrames."""
+    comparison_df = df2.merge(df1,
+                              indicator=True,
+                              how='outer')
+    if which is None:
+        diff_df = comparison_df[comparison_df['_merge'] != 'both']
+    else:
+        diff_df = comparison_df[comparison_df['_merge'] == which]
+    return diff_df
 
 def transfer_custom_fields(source, destination, contact_rel):
+    # Generate labels for Id matching
+    s_id = f'Id_{source.appname}'
+    d_id = f'Id_{destination.appname}'
+
+    # Generate labels for Id matching
+    s_id = f'Id_{source.appname}'
+    d_id = f'Id_{destination.appname}'
+
+    create_string = source.get_table_create('Custom_Contact')
+    create_field_strings = create_string.split('\n')[2:-2]
+    field_creation = {}
+    for string in create_field_strings:
+        fieldname = re.search(r'`(.*)`', string).group(1)
+        string = string.replace(f'`{fieldname}`', '')
+        string = string.strip().strip(',')
+        field_creation[fieldname] = string
+
+    s_custom_fields = source.get_table('DataFormField')
+    s_contact_cfs = s_custom_fields[s_custom_fields['FormId'] == -1].copy()
+    if not len(s_contact_cfs.index):
+        return None
+    d_custom_fields = destination.get_table('DataFormField')
+    d_contact_cfs = d_custom_fields[d_custom_fields['FormId'] == -1].copy()
+
+    # Get list of drilldown custom fieldnames
+    drilldowns = s_custom_fields[(s_custom_fields['DataType'] == 23) &
+                                 (s_custom_fields['FormId'] == -1)]
+    drilldown_names = drilldowns['FieldName'].tolist()
+
+    # Generate matches on Label and Type
+    s_fieldname = f'FieldName_{source.appname}'
+    items = [
+        s_id,
+        d_id,
+        s_fieldname,
+        f'NewDatabaseName'
+    ]
+    print(items)
+    matches = pd.merge(
+        s_contact_cfs,
+        d_contact_cfs,
+        how='left',
+        on=['DisplayName', 'DataType'],
+        suffixes=(f'_{source.appname}', f'_{destination.appname}')
+    )
+
+    # Handle database names
+    d_db_names = destination.get_column_names('Custom_Contact')
+
+    def fieldname_match_check(row):
+        if pd.isnull(row[d_id]):
+            return handle_db_names(row[s_fieldname], d_db_names)
+        else:
+            return row[f'FieldName_{source.appname}']
+
+    matches['NewDatabaseName'] = matches.apply(
+        lambda x: fieldname_match_check(x),
+        axis=1
+    )
+    matches = matches.filter(items=items)
+
+    # Filter to achieve list of missing custom fields
+    missing = matches[matches[d_id].isnull()]
+    missing_ids = missing[s_id].tolist()
+    missing_rows = s_contact_cfs.loc[s_contact_cfs['Id'].isin(missing_ids)]
+    missing_rows = missing_rows.copy()
+
+    # Get auto increment and generate list of ids based on that
+    offset = 50
+    increment_start = destination.get_auto_increment('DataFormField') + offset
+    increment_end = (2 * len(missing_rows)) + increment_start
+    new_ids = [i for i in range(increment_start, increment_end, 2)]
+
+    # Update missing categories to have newly generated ids
+    new_ids_series = pd.Series(new_ids)
+    missing_rows['Id'] = new_ids_series.values
+    
+    #####################################
+    # Add custom field tabs and headers #
+    #####################################
+
+    s_tabs = source.get_table('DataFormTab')
+    d_tabs = destination.get_table('DataFormTab')
+
+    s_contact_tabs = s_tabs[s_tabs['FormId'] == -1].copy()
+    d_contact_tabs = d_tabs[d_tabs['FormId'] == -1].copy()
+
+    tab_matches = pd.merge(
+        s_contact_tabs,
+        d_contact_tabs,
+        on='TabName',
+        how='left',
+        suffixes=(f'_{source.appname}', f'_{destination.appname}')
+    ).filter(items=[s_id, d_id])
+
+    tab_rel = create_missing_records(
+        'DataFormTab',
+        destination,
+        s_contact_tabs,
+        tab_matches,
+    )
+    print(tab_rel)
+    sys.exit()
+
+def transfer_custom_fieldsOLD(source, destination, contact_rel):
     """
     Creates custom fields in the destination app if they don't already exist
     by the same name and type
@@ -466,13 +583,14 @@ def transfer_custom_fields(source, destination, contact_rel):
     # Map fields
     missing_rows['GroupId'] = missing_rows['GroupId'].map(header_rel)
     missing_rows['FieldName'] = missing_rows['FieldName'].map(fieldname_rel)
-
+    
     # Insert dataframe for custom fields
     if not missing_rows.empty:
         destination.insert_dataframe('DataFormField', missing_rows)
 
     # Add custom fields to Custom_Contact
     missing_fieldnames = missing_rows['FieldName'].tolist()
+    #print(missing_fieldnames)
     if missing_fieldnames:
         destination.alter_custom_field_table(
             field_creation,
@@ -514,6 +632,7 @@ def transfer_custom_fields(source, destination, contact_rel):
     #########################
     s_fieldnames = s_contact_cfs['FieldName'].tolist()
     s_fieldnames.append('Id')
+    #print(s_fieldnames) Field names in a list
 
     cf_data = source.get_table('Custom_Contact').filter(items=s_fieldnames)
 
@@ -570,18 +689,78 @@ def transfer_custom_fields(source, destination, contact_rel):
         # Add rows
         if not dds_to_import.empty:
             destination.insert_dataframe('DrilldownOption', dds_to_import)
-
+    #print(cf_data['TestRadio'])
+    
     # Filter out contacts not in contact_rel
     cf_data = cf_data[cf_data['Id'].isin(list(contact_rel.keys()))]
-
+    #print(cf_data['TestRadio'])
     cf_data['Id'] = cf_data['Id'].map(contact_rel)
     cf_data_to_import = cf_data[cf_data['Id'].notnull()].copy()
+    #print(cf_data_to_import['TestRadio'])
     cf_data_to_import['Id'] = cf_data_to_import['Id'].astype(int)
+    #print(cf_data_to_import['TestRadio'])
     cf_data_to_import.rename(cf_name_rel, axis=1, inplace=True)
+    print(cf_data_to_import.columns)
+    #sys.exit()
+    #josh columns
+    oldColumns = list(cf_data_to_import.columns)
+    #for a in oldColumns:
+    #    print(a)
+    #sys.exit()
+    #for col in cf_data_to_import.columns: 
+    #    print(col)
+    #sys.exit()
     cf_data_to_import = cf_data_to_import[list(cf_name_rel.values())]
+
+    # Gets custom_contact combines and creates statement if any columns need to be added
+    #Get source show custom_contact
+    source_columns = source.show_table_columns('Custom_Contact')
+    #Get source show custom_contact
+    dest_columns = destination.show_table_columns('Custom_Contact')
+    #source to dataframe
+    source_columns = pd.DataFrame(source_columns, columns =['Field', 'Type', 'Null', 'Key', 'Default', 'Extra'])
+    
+    
+
+    #I have Josh Columns I need to add 0's to my list of missing columns and compare with josh, if they match insert
+    #print(source_columns)
+    #print(oldColumns)
+    
+    #destination to dataframe
+    dest_columns = pd.DataFrame(dest_columns, columns =['Field', 'Type', 'Null', 'Key', 'Default', 'Extra'])
+    combine_fields = dataframe_difference(source_columns, dest_columns)
+    select_color = combine_fields.loc[combine_fields['_merge'] == 'right_only']
+    select_color1 = combine_fields.loc[combine_fields['_merge'] == 'left_only']
+    flap = select_color['Field'].tolist()
+    snap = [i + '0' for i in flap]
+    print(snap)
+    print(oldColumns)
+    sys.exit()
+    #clap = pd.DataFrame(flap)
+    #print(clap)
+    sys.exit()
+    alter_statement1 = ''
+    for x in combine_fields.index:
+        if combine_fields['_merge'][x] == 'right_only':
+            field1 = ''.join(combine_fields['Field'][x])
+            field_type1 = field1
+            alter_statement1 += field_type1
+    print(alter_statement1)  
+    sys.exit()  
+    alter_statement = ''
+    for x in combine_fields.index:
+        if combine_fields['_merge'][x] == 'right_only':
+            field = ''.join(combine_fields['Field'][x])
+            typefield = ''.join(combine_fields['Type'][x])
+            field_type = 'ADD ' + field + ' ' + typefield + ', '
+            alter_statement += field_type
+    alter_statement = re.sub(r'\, $',';',alter_statement)
+    
+    destination.alter_missing_cfs(alter_statement)
 
     # TODO: add messaging for when they need to purge custom fields
     if not cf_data_to_import.empty:
+        #print(cf_data_to_import)
         destination.insert_dataframe(
             'Custom_Contact',
             cf_data_to_import,
