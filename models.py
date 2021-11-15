@@ -1,6 +1,8 @@
 from mysql.connector import connect
+import mysql.connector
 import pandas as pd
 import re
+import sys
 
 
 class Database:
@@ -72,13 +74,23 @@ class Database:
         self.cursor.execute(query)
         results = [row for row in self.cursor]
         return results[0][1]
+    
+    def show_table_columns(self, tablename):
+        query = (f"""
+            SHOW COLUMNS FROM {tablename};
+        """)
+        self.cursor.execute(query)
+        results = [row for row in self.cursor]
+        return results
 
     def alter_custom_field_table(self, create_statements, rel, missing):
         create_strings = []
         for fieldname in missing:
+            #print(fieldname)
             create_strings.append(
                 f'ADD `{rel[fieldname]}` {create_statements[fieldname]}'
             )
+            print(create_strings)
 
         create_block = ',\n'.join(create_strings)
         query = (f"""
@@ -87,6 +99,17 @@ class Database:
         """)
         self.cursor.execute(query)
         self.connection.commit()
+    
+    def alter_missing_cfs(self, alter_statement):
+        alter = 'ALTER TABLE Custom_Contact '
+        query = alter + alter_statement
+        try:
+            #print(query)
+            self.cursor.execute(query)
+            self.connection.commit()
+        except Exception as e:
+                print(e)
+                #sys.exit()
 
     def insert_dataframe(self, tablename, dataframe, replace=False):
         quoted_columns = [f'`{column}`' for column in list(dataframe)]
@@ -124,7 +147,12 @@ class Database:
                 VALUES
                     {values};
             """)
+            #try:
+            print(query)
             self.cursor.execute(query)
+            #except Exception as e:
+                #print(e)
+                #sys.exit()
             self.connection.commit()
 
     def update_app_setting(self, setting, value):

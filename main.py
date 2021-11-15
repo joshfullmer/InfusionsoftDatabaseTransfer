@@ -22,20 +22,20 @@ Please provide information for each application:
     """)
     source_app = ''
     while len(source_app) <= 0:
-        source_app = input('Source Application Name:\n')
+        source_app = 'daniels'#input('Source Application Name:\n')
     source_port = 0
     while len(str(source_port)) != 5:
         try:
-            source_port = int(input('Source Application Port:\n'))
+            source_port = 27003#int(input('Source Application Port:\n'))
         except ValueError:
             print('Port number must be 5-digits.\n')
     destination_app = ''
     while len(destination_app) <= 0:
-        destination_app = input('Destination Application Name:\n')
+        destination_app = 'ap187'#input('Destination Application Name:\n')
     destination_port = 0
     while len(str(destination_port)) != 5:
         try:
-            destination_port = input('Destination Application Port:\n')
+            destination_port = 27014#input('Destination Application Port:\n')
         except ValueError:
             print('Port number must be 5-digits.\n')
     clear()
